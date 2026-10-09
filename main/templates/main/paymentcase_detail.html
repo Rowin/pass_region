@@ -1,0 +1,28 @@
+{% extends 'main/base.html' %}
+{% block title %}{% endblock %}
+{% block content %}
+<h1>Bonjour {{ payment_case.firstname|capfirst }} {{ payment_case.lastname|upper }}</h1>
+<h2>Pass Région</h2>
+<table>
+    <thead>
+        <th>Titulaire</th>
+        <th>Statut</th>
+        <th>Commentaire</th>
+    </thead>
+{% for pass_region_payment in payment_case.passregionpayment_set.all %}
+    <tr>
+        <td>{{ pass_region_payment.fullname }}</td>
+        <td>{{ pass_region_payment.get_payment_status_display }}</td>
+        <td>{{ pass_region_payment.comment }}</td>
+    </tr>
+{% empty %}
+    <tr><td colspan="2">Aucun paiment pass région en cours</td></tr>
+{% endfor %}
+</table>
+
+{% if payment_case.passregionpayment_set.count < payment_case.required_pass_region %}
+    <a href="{% url 'pass-region-payment' payment_case.pk %}" role="button">Ajouter un paiement</a>
+{% endif %}
+
+<h2>Paiement CB</h2>
+{% endblock %}
