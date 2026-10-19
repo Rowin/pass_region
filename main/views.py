@@ -1,15 +1,16 @@
 from django.views.generic import DetailView, CreateView
 from django.shortcuts import get_object_or_404
 from django.urls import reverse
+from django.contrib.auth.mixins import LoginRequiredMixin
 
 from main.models import PaymentCase, PassRegionPayment
 from main.forms import PassRegionPaymentForm
 
-class PaymentCaseDetail(DetailView):
+class PaymentCaseDetail(LoginRequiredMixin, DetailView):
     model = PaymentCase
     context_object_name = "payment_case"
 
-class PassRegionPaymentCreate(CreateView):
+class PassRegionPaymentCreate(LoginRequiredMixin, CreateView):
     model = PassRegionPayment
     form_class = PassRegionPaymentForm
 

@@ -1,7 +1,11 @@
+from typing import Any
+import uuid
+
 from django.db import models
 from django.core import validators
 from django.utils.translation import gettext as _
 from django.utils.translation import gettext_lazy as _l
+from django.conf import settings
 
 from main.fields import EncryptedCharField
 
@@ -10,9 +14,7 @@ class PaymentCase(models.Model):
         verbose_name = _("Dossier de paiement")
         verbose_name_plural = _("Dossiers de paiement")
 
-    firstname = models.fields.CharField(_("Prénom"))
-    lastname = models.fields.CharField(_("Nom"))
-    email = models.fields.EmailField(_("Adresse e-mail"))
+    user = models.OneToOneField(to=settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
     session_number = models.fields.CharField(_("Numéro de la session"), validators=[validators.RegexValidator(r"\d*")])
     required_pass_region = models.fields.IntegerField(_("Nombre de paiements Pass Région requis"), default=1)
     
