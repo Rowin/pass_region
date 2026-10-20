@@ -1,7 +1,7 @@
 {% extends 'main/base.html' %}
 {% block title %}{% endblock %}
 {% block content %}
-<form action="{% url 'pass-region-payment' view.kwargs.pk %}" method="post">
+<form action="{% url 'pass-region-payment' %}" method="post">
     {% csrf_token %}
     {{ form.as_p }}
     <input type="submit" value="Sauvegarder">

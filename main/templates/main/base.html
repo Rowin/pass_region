@@ -7,6 +7,12 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@yohns/picocss@2.2.10/css/pico.classless.min.css">
 </head>
 <body>
+    <nav>
+        <form action="{% url 'logout' %}" method="post">
+            {% csrf_token %}
+            <input type="submit" value="Déconnexion">
+        </form>
+    </nav>
     <main>
         {% block content %}{% endblock %}
     </main>

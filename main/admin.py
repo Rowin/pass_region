@@ -4,8 +4,10 @@ import uuid
 from django.contrib import admin
 from django.forms import ModelForm, CharField, EmailField
 from django.contrib.auth import get_user_model
+from django.contrib.auth.models import User
 from django.http import HttpRequest
 from django.db import transaction
+from django.urls import reverse
 from django.utils.translation import gettext as _
 
 from sesame.utils import get_query_string
@@ -28,15 +30,30 @@ class PaymentCaseAdmin(admin.ModelAdmin):
             obj.user = get_user_model().objects.create_user(
                 username=uuid.uuid4().hex,
                 first_name = form.cleaned_data["first_name"],
+                last_name = form.cleaned_data["last_name"],
+                email = form.cleaned_data["email"],
                 password=None,
                 is_staff=False,
                 is_superuser=False
             )
 
-        transaction.on_commit(lambda: print(get_query_string(user=obj.user)))
+        transaction.on_commit(lambda: self.send_magic_link(obj.user, request))
         
         super().save_model(request, obj, form, change)
 
+    def send_magic_link(self, user: User, request: HttpRequest):
+        link = reverse("login")
+        link = request.build_absolute_uri(link)
+        link += get_query_string(user=user)
+
+        print(link)
+
+        user.email_user(
+            subject="sesame",
+            message=f"Hello {user.first_name} {user.last_name}, Here is your link: {link}"
+        )
+    
+    
     class PaymentCaseAdminForm(ModelForm):
         first_name = CharField(label=_("Prénom"))
         last_name = CharField(label=_("Nom"))
@@ -45,6 +62,14 @@ class PaymentCaseAdmin(admin.ModelAdmin):
         class Meta:
             model = PaymentCase
             fields = ["first_name", "last_name", "email", "session_number", "required_pass_region"]
+
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+
+            if self.instance.pk:
+                self.fields["first_name"].initial = self.instance.user.first_name
+                self.fields["last_name"].initial = self.instance.user.last_name
+                self.fields["email"].initial = self.instance.user.email                                                                                 
 
     form = PaymentCaseAdminForm
 

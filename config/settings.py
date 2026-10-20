@@ -37,10 +37,12 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    'main'
+    'debug_toolbar',
+    'main',
 ]
 
 MIDDLEWARE = [
+    'debug_toolbar.middleware.DebugToolbarMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -128,8 +130,15 @@ STATIC_URL = 'static/'
 
 MAILERS = {
     'default': {
-        'BACKEND': 'django.core.mail.backends.console.EmailBackend',
+        'BACKEND': 'django.core.mail.backends.filebased.EmailBackend',
+        'OPTIONS': {
+            'file_path': "mail/"
+        }
     },
 }
 
 CARD_PIN_FERNET_KEYS = "12345678910111213141516171819"
+
+INTERNAL_IPS = [
+    "127.0.0.1",
+]

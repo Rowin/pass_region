@@ -7,5 +7,6 @@ requires-python = ">=3.13"
 dependencies = [
     "cryptography>=50.0.2",
     "django>=6.1.2",
+    "django-debug-toolbar>=8.0.0",
     "django-sesame>=3.2.5",
 ]

@@ -21,7 +21,7 @@
 </table>
 
 {% if payment_case.passregionpayment_set.count < payment_case.required_pass_region %}
-    <a href="{% url 'pass-region-payment' payment_case.pk %}" role="button">Ajouter un paiement</a>
+    <a href="{% url 'pass-region-payment' %}" role="button">Ajouter un paiement</a>
 {% endif %}
 
 <h2>Paiement CB</h2>
