@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, cast
 import uuid
 
 from django.db import models
@@ -17,7 +17,9 @@ class PaymentCase(models.Model):
     user = models.OneToOneField(to=settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
     session_number = models.fields.CharField(_("Numéro de la session"), validators=[validators.RegexValidator(r"\d*")])
     required_pass_region = models.fields.IntegerField(_("Nombre de paiements Pass Région requis"), default=1)
-    
+    completed = models.fields.BooleanField(_("Paiement complet"), default=False)
+
+
 class CardPayment(models.Model):
     class CardPaymentChoice(models.TextChoices):
         YES = "YES", "YES"

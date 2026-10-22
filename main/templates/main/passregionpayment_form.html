@@ -3,7 +3,7 @@
 {% block content %}
 <form action="{% url 'pass-region-payment' %}" method="post">
     {% csrf_token %}
-    {{ form.as_p }}
+    {{ form.as_div }}
     <input type="submit" value="Sauvegarder">
 </form>
 {% endblock %}

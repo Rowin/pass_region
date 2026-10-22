@@ -1,28 +1,38 @@
 {% extends 'main/base.html' %}
 {% block title %}{% endblock %}
 {% block content %}
-<h1>Bonjour {{ payment_case.first_name|capfirst }} {{ payment_case.last_name|upper }}</h1>
-<h2>Pass Région</h2>
-<table>
-    <thead>
-        <th>Titulaire</th>
-        <th>Statut</th>
-        <th>Commentaire</th>
-    </thead>
-{% for pass_region_payment in payment_case.passregionpayment_set.all %}
-    <tr>
-        <td>{{ pass_region_payment.fullname }}</td>
-        <td>{{ pass_region_payment.get_payment_status_display }}</td>
-        <td>{{ pass_region_payment.comment }}</td>
-    </tr>
-{% empty %}
-    <tr><td colspan="2">Aucun paiment pass région en cours</td></tr>
-{% endfor %}
-</table>
+<h1>Bonjour {{ payment_case.user.first_name|capfirst }} {{ payment_case.user.last_name|upper }}</h1>
 
-{% if payment_case.passregionpayment_set.count < payment_case.required_pass_region %}
-    <a href="{% url 'pass-region-payment' %}" role="button">Ajouter un paiement</a>
-{% endif %}
+<section>
+    <h2>Pass Région</h2>
+    <table>
+        <thead>
+            <th>Titulaire</th>
+            <th>Statut</th>
+            <th>Commentaire</th>
+        </thead>
+    {% for pass_region_payment in payment_case.passregionpayment_set.all %}
+        <tr>
+            <td>{{ pass_region_payment.fullname }}</td>
+            <td>{{ pass_region_payment.get_payment_status_display }}</td>
+            <td>{{ pass_region_payment.comment }}</td>
+        </tr>
+    {% empty %}
+        <tr><td colspan="2">Aucun paiment pass région en cours</td></tr>
+    {% endfor %}
+    </table>
 
-<h2>Paiement CB</h2>
+    <p>
+    {% if payment_case.passregionpayment_set.count < payment_case.required_pass_region %}
+        <a href="{% url 'pass-region-payment' %}" role="button">Ajouter un paiement</a>
+    {% else %}
+        <button disabled>Ajouter un paiement</button>
+    {% endif %}
+    {{ payment_case.passregionpayment_set.count }} / {{ payment_case.required_pass_region }} Pass Region requis
+    </p>
+</section>
+
+<section>
+    <h2>Paiement CB</h2>
+</section>
 {% endblock %}

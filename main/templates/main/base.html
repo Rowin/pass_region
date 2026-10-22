@@ -1,20 +1,35 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}{% endblock %}</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@yohns/picocss@2.2.10/css/pico.classless.min.css">
+    {% load static %}
 </head>
+
 <body>
-    <nav>
-        <form action="{% url 'logout' %}" method="post">
-            {% csrf_token %}
-            <input type="submit" value="Déconnexion">
-        </form>
-    </nav>
+    <header>
+        <nav>
+            <ul><img style="height: 2lh;" src="{% static 'main/img/fnpc.png' %}" alt=""></ul>
+            <ul>
+                <li><button form="logout" type="submit">Déconnexion</button></li>
+            </ul>
+        </nav>
+    </header>
+
     <main>
         {% block content %}{% endblock %}
     </main>
+    
+    <footer>
+        <hr>
+        Protection Civile de l'Isère
+    </footer>
+    <form id="logout" action="{% url 'logout' %}" method="post">
+        {% csrf_token %}
+    </form>
 </body>
+
 </html>

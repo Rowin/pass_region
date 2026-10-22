@@ -11,6 +11,7 @@ https://docs.djangoproject.com/en/6.1/ref/settings/
 """
 
 from pathlib import Path
+import os
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -138,6 +139,10 @@ MAILERS = {
 }
 
 CARD_PIN_FERNET_KEYS = "12345678910111213141516171819"
+
+HELLO_ASSO_CLIENT_ID = os.environ.get("HELLO_ASSO_CLIENT_ID", "")
+HELLO_ASSO_CLIENT_SECRET = os.environ.get("HELLO_ASSO_CLIENT_SECRET", "")
+HELLO_ASSO_ORGANIZATION_SLUG = os.environ.get("HELLO_ASSO_ORGANIZATION_SLUG", "")
 
 INTERNAL_IPS = [
     "127.0.0.1",
