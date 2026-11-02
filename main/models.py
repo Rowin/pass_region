@@ -1,6 +1,3 @@
-from typing import Any, cast
-import uuid
-
 from django.db import models
 from django.core import validators
 from django.utils.translation import gettext as _
@@ -9,32 +6,48 @@ from django.conf import settings
 
 from main.fields import EncryptedCharField
 
+
 class PaymentCase(models.Model):
     class Meta:
         verbose_name = _("Dossier de paiement")
         verbose_name_plural = _("Dossiers de paiement")
 
     user = models.OneToOneField(to=settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
-    session_number = models.fields.CharField(_("Numéro de la session"), validators=[validators.RegexValidator(r"\d*")])
-    required_pass_region = models.fields.IntegerField(_("Nombre de paiements Pass Région requis"), default=1)
+    session_number = models.fields.CharField(
+        _("Numéro de la session"), validators=[validators.RegexValidator(r"\d*")]
+    )
+    required_pass_region = models.fields.IntegerField(
+        _("Nombre de paiements Pass Région requis"), default=1
+    )
     completed = models.fields.BooleanField(_("Paiement complet"), default=False)
 
 
 class CardPayment(models.Model):
     class CardPaymentChoice(models.TextChoices):
-        YES = "YES", "YES"
+        WAITING_PAYMENT = "WP", _("En attente de paiement")
+        PAYMENT_SUCCESS = "PS", _("Paiement réussi")
+        PAYMENT_CONFIRMED = "PC", _("Paiement confirmé")
+        PAYMENT_FAILED = "PF", _("Paiement échoué")
 
     class Meta:
         verbose_name = _("Paiement CB")
         verbose_name_plural = _("Paiements CB")
-    
-    checkout_url = models.fields.URLField()
-    payment_status = models.fields.CharField(choices=CardPaymentChoice, default=CardPaymentChoice.YES)
+        indexes = [models.Index(fields=["checkout_intent_id"])]
+
+    checkout_intent_id = models.fields.CharField(unique=True)
+    redirect_url = models.fields.URLField()
+    redirect_url_expires_at = models.DateTimeField()
+    payment_status = models.fields.CharField(
+        choices=CardPaymentChoice, default=CardPaymentChoice.WAITING_PAYMENT
+    )
     payment_case = models.ForeignKey(to=PaymentCase, on_delete=models.CASCADE)
+
 
 class PassRegionPayment(models.Model):
     class PassRegionPaymentChoice(models.TextChoices):
-        WAITING_CREDENTIALS = "WAITING_CREDENTIALS", _l("En attente des identifiants Pass Région")
+        WAITING_CREDENTIALS = "WAITING_CREDENTIALS", _l(
+            "En attente des identifiants Pass Région"
+        )
         WAITING_PAYMENT = "WAITING_PAYMENT", _l("En attente de prélèvement")
         PAYMENT_REJECTED = "PAYMENT_REJECTED", _l("Prélèvement rejeté")
         PAYMENT_APPROVED = "PAYMENT_APPROVED", _l("Prélèvement accepté")
@@ -45,7 +58,9 @@ class PassRegionPayment(models.Model):
 
     holder_firstname = models.fields.CharField(_("Prénom du titulaire"))
     holder_lastname = models.fields.CharField(_("Nom du titulaire"))
-    card_number = models.fields.CharField(_("Numéro de carte"), validators=[validators.RegexValidator(r"\d*")])
+    card_number = models.fields.CharField(
+        _("Numéro de carte"), validators=[validators.RegexValidator(r"\d*")]
+    )
     card_pin = EncryptedCharField(_("Code PIN"), max_length=200, null=True, blank=True)
 
     payment_status = models.fields.CharField(choices=PassRegionPaymentChoice)
@@ -56,17 +71,19 @@ class PassRegionPayment(models.Model):
 
     @property
     def fullname(self) -> str:
-        return f'{self.holder_firstname.capitalize()} {self.holder_lastname.upper()}'
+        return f"{self.holder_firstname.capitalize()} {self.holder_lastname.upper()}"
 
     def save(self, *args, **kwargs):
-        if self.payment_status in (self.PassRegionPaymentChoice.PAYMENT_APPROVED, self.PassRegionPaymentChoice.PAYMENT_REJECTED):
+        if self.payment_status in (
+            self.PassRegionPaymentChoice.PAYMENT_APPROVED,
+            self.PassRegionPaymentChoice.PAYMENT_REJECTED,
+        ):
             self.card_pin = None
 
         super().save(*args, **kwargs)
-    
+
 
 class APICredentialRecord(models.Model):
     refresh_token = EncryptedCharField()
     access_token = EncryptedCharField()
     access_token_expires_at = models.DateTimeField()
-    

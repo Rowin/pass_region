@@ -2,6 +2,7 @@ from decimal import Decimal
 import logging
 import ssl
 from typing import Any, cast
+import urllib.parse
 
 import requests
 from django.conf import settings
@@ -11,9 +12,9 @@ from django.utils.timezone import timedelta
 from django.utils.translation import gettext as _
 from requests.adapters import HTTPAdapter
 from requests.models import PreparedRequest
+from django.urls import reverse
 
 from main.models import APICredentialRecord
-
 
 logger = logging.getLogger(__name__)
 
@@ -123,9 +124,8 @@ class HelloAssoAPI:
         value = getattr(settings, name, None)
         if not value:
             raise ImproperlyConfigured(
-                _(
-                    "The Django setting %(setting_name)s must be configured."
-                ) % {"setting_name": name}
+                _("The Django setting %(setting_name)s must be configured.")
+                % {"setting_name": name}
             )
         return value
 
@@ -200,7 +200,9 @@ class HelloAssoAPI:
         refresh_token = token_data.get("refresh_token")
         if not isinstance(refresh_token, str) or not refresh_token:
             if credential is None:
-                raise ValueError(_("La réponse Hello Asso ne contient pas de refresh_token."))
+                raise ValueError(
+                    _("La réponse Hello Asso ne contient pas de refresh_token.")
+                )
             refresh_token = credential.refresh_token
 
         try:
@@ -240,12 +242,7 @@ class HelloAssoAPI:
         self,
         amount: Decimal | int | float,
         message: str,
-        *,
-        back_url: str,
-        error_url: str,
-        return_url: str,
-        contains_donation: bool = False,
-    ) -> str:
+    ) -> tuple[int, str]:
         """Create a Hello Asso Checkout and return its redirect URL.
 
         Args:
@@ -281,14 +278,15 @@ class HelloAssoAPI:
         checkout_url = (
             f"{self.API_URL}/organizations/{organization_slug}/checkout-intents"
         )
+
         payload: dict[str, int | str | bool] = {
             "totalAmount": int(amount_in_cents),
             "initialAmount": int(amount_in_cents),
             "itemName": message,
-            "backUrl": back_url,
-            "errorUrl": error_url,
-            "returnUrl": return_url,
-            "containsDonation": contains_donation,
+            "backUrl": self.get_callback_url("back"),
+            "errorUrl": self.get_callback_url("error"),
+            "returnUrl": self.get_callback_url("return"),
+            "containsDonation": False,
         }
         response = self._request_json(
             checkout_url,
@@ -299,6 +297,17 @@ class HelloAssoAPI:
             },
         )
         redirect_url = response.get("redirectUrl")
+        checkout_intent_id = response.get("id")
         if not isinstance(redirect_url, str) or not redirect_url:
             raise ValueError(_("La réponse Hello Asso ne contient pas de redirectUrl."))
-        return redirect_url
+
+        if not isinstance(checkout_intent_id, int) or not checkout_intent_id:
+            raise ValueError(response)
+
+        return checkout_intent_id, redirect_url
+
+    def get_callback_url(self, type: str) -> str:
+        base_url = self._get_setting("HELLO_ASSO_CALLBACK_BASE_URL")
+        callback_url = f"{urllib.parse.urljoin(base_url, reverse("card-payment-return"))}?{urllib.parse.urlencode({'type': type})}"
+
+        return callback_url
