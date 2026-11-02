@@ -12,7 +12,7 @@ from django.utils.translation import gettext as _
 
 from sesame.utils import get_query_string
 
-from main.models import PaymentCase, PassRegionPayment
+from main.models import PaymentCase, PassRegionPayment, CardPayment
 
 class PassRegionInline(admin.TabularInline):
     model = PassRegionPayment
@@ -77,3 +77,7 @@ class PaymentCaseAdmin(admin.ModelAdmin):
                 self.fields["email"].initial = self.instance.user.email                                                                                 
 
     form = PaymentCaseAdminForm
+
+@admin.register(CardPayment)
+class CardPaymentAdmin(admin.ModelAdmin):
+    ...

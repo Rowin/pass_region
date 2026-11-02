@@ -1,12 +1,14 @@
 from decimal import Decimal
+import ssl
 from unittest.mock import Mock, patch
 
+import requests
 from django.core.exceptions import ImproperlyConfigured
 from django.test import TestCase, override_settings
 from django.utils import timezone
 from django.utils.timezone import timedelta
 
-from main.hello_asso import HelloAssoAPI
+from main.hello_asso import HelloAssoAPI, _RelaxedX509HTTPAdapter
 from main.models import APICredentialRecord
 
 
@@ -41,7 +43,58 @@ class HelloAssoAPITests(TestCase):
             return_url="https://example.com/return",
         )
 
-    @patch("main.hello_asso.requests.post")
+    def test_adapter_relaxes_strict_chain_check_but_keeps_tls_verification(
+        self,
+    ) -> None:
+        adapter = _RelaxedX509HTTPAdapter()
+        request = requests.Request("GET", HelloAssoAPI.AUTH_URL).prepare()
+        _, pool_kwargs = adapter.build_connection_pool_key_attributes(
+            request, verify=True
+        )
+        context = pool_kwargs["ssl_context"]
+
+        self.assertFalse(context.verify_flags & ssl.VERIFY_X509_STRICT)
+        self.assertEqual(context.verify_mode, ssl.CERT_REQUIRED)
+        self.assertTrue(context.check_hostname)
+
+    @override_settings(DEBUG=False)
+    @patch("main.hello_asso._RelaxedX509HTTPAdapter")
+    @patch("main.hello_asso.requests.Session.post")
+    def test_production_does_not_mount_relaxed_tls_adapter(
+        self,
+        post: Mock,
+        adapter: Mock,
+    ) -> None:
+        post.return_value = self.response({"result": "ok"})
+
+        self.api._request_json("https://example.com", headers={})
+
+        adapter.assert_not_called()
+
+    @patch("main.hello_asso.requests.Session.post")
+    def test_http_error_logs_response_details_without_request_headers(
+        self,
+        post: Mock,
+    ) -> None:
+        response = self.response({"message": "amount is invalid"})
+        response.status_code = 400
+        response.text = '{"message":"amount is invalid"}'
+        response.raise_for_status.side_effect = requests.HTTPError("Bad Request")
+        post.return_value = response
+
+        with self.assertLogs("main.hello_asso", level="WARNING") as captured:
+            with self.assertRaises(requests.HTTPError):
+                self.api._request_json(
+                    "https://api.helloasso-sandbox.com/v5/checkout-intents",
+                    headers={"Authorization": "Bearer do-not-log"},
+                )
+
+        log_output = "\n".join(captured.output)
+        self.assertIn("HTTP 400", log_output)
+        self.assertIn("amount is invalid", log_output)
+        self.assertNotIn("do-not-log", log_output)
+
+    @patch("main.hello_asso.requests.Session.post")
     def test_checkout_uses_client_credentials_and_returns_redirect_url(
         self,
         post: Mock,
@@ -102,7 +155,7 @@ class HelloAssoAPITests(TestCase):
         self.assertEqual(credential.refresh_token, "new-refresh-token")
         self.assertEqual(credential.access_token, "new-access-token")
 
-    @patch("main.hello_asso.requests.post")
+    @patch("main.hello_asso.requests.Session.post")
     def test_checkout_can_enable_donations(self, post: Mock) -> None:
         """Check that the optional donation flag is forwarded to Hello Asso."""
         APICredentialRecord.objects.create(
@@ -126,7 +179,7 @@ class HelloAssoAPITests(TestCase):
         self.assertEqual(redirect_url, "https://www.helloasso.com/checkout/donation")
         self.assertTrue(post.call_args.kwargs["json"]["containsDonation"])
 
-    @patch("main.hello_asso.requests.post")
+    @patch("main.hello_asso.requests.Session.post")
     def test_valid_access_token_is_reused_without_authentication_request(
         self,
         post: Mock,
@@ -150,7 +203,7 @@ class HelloAssoAPITests(TestCase):
             "Bearer cached-access-token",
         )
 
-    @patch("main.hello_asso.requests.post")
+    @patch("main.hello_asso.requests.Session.post")
     def test_expired_access_token_is_refreshed_and_credentials_are_updated(
         self,
         post: Mock,
@@ -190,7 +243,7 @@ class HelloAssoAPITests(TestCase):
         self.assertEqual(credential.refresh_token, "rotated-refresh-token")
 
     @override_settings(HELLO_ASSO_CLIENT_ID="", HELLO_ASSO_CLIENT_SECRET="")
-    @patch("main.hello_asso.requests.post")
+    @patch("main.hello_asso.requests.Session.post")
     def test_missing_client_credentials_raise_configuration_error(
         self,
         post: Mock,
@@ -201,7 +254,7 @@ class HelloAssoAPITests(TestCase):
 
         post.assert_not_called()
 
-    @patch("main.hello_asso.requests.post")
+    @patch("main.hello_asso.requests.Session.post")
     def test_fractional_cent_amount_is_rejected_before_request(
         self,
         post: Mock,
@@ -212,7 +265,7 @@ class HelloAssoAPITests(TestCase):
 
         post.assert_not_called()
 
-    @patch("main.hello_asso.requests.post")
+    @patch("main.hello_asso.requests.Session.post")
     def test_empty_message_is_rejected_before_request(self, post: Mock) -> None:
         """Check an empty payment label is rejected before the API call."""
         with self.assertRaises(ValueError):
@@ -220,7 +273,7 @@ class HelloAssoAPITests(TestCase):
 
         post.assert_not_called()
 
-    @patch("main.hello_asso.requests.post")
+    @patch("main.hello_asso.requests.Session.post")
     def test_missing_redirect_url_raises_value_error(self, post: Mock) -> None:
         """Check a checkout response without a redirect URL is rejected."""
         APICredentialRecord.objects.create(
@@ -234,7 +287,7 @@ class HelloAssoAPITests(TestCase):
             self.create_checkout(1, "Payment")
 
     @override_settings(HELLO_ASSO_ORGANIZATION_SLUG="")
-    @patch("main.hello_asso.requests.post")
+    @patch("main.hello_asso.requests.Session.post")
     def test_missing_organization_slug_raises_configuration_error(
         self,
         post: Mock,

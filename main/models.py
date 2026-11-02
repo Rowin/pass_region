@@ -28,8 +28,8 @@ class CardPayment(models.Model):
         verbose_name = _("Paiement CB")
         verbose_name_plural = _("Paiements CB")
     
-    checkout_intent_id = models.fields.CharField(validators=[validators.RegexValidator(r"\d*")])
-    payment_status = models.fields.CharField(choices=CardPaymentChoice)
+    checkout_url = models.fields.URLField()
+    payment_status = models.fields.CharField(choices=CardPaymentChoice, default=CardPaymentChoice.YES)
     payment_case = models.ForeignKey(to=PaymentCase, on_delete=models.CASCADE)
 
 class PassRegionPayment(models.Model):

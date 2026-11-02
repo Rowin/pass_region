@@ -1,4 +1,6 @@
 from decimal import Decimal
+import logging
+import ssl
 from typing import Any, cast
 
 import requests
@@ -7,8 +9,34 @@ from django.core.exceptions import ImproperlyConfigured
 from django.utils import timezone
 from django.utils.timezone import timedelta
 from django.utils.translation import gettext as _
+from requests.adapters import HTTPAdapter
+from requests.models import PreparedRequest
 
 from main.models import APICredentialRecord
+
+
+logger = logging.getLogger(__name__)
+
+
+class _RelaxedX509HTTPAdapter(HTTPAdapter):
+    """Keep TLS verification while relaxing strict X.509 chain checks."""
+
+    def __init__(self) -> None:
+        self._ssl_context = ssl.create_default_context()
+        self._ssl_context.verify_flags &= ~ssl.VERIFY_X509_STRICT
+        super().__init__()
+
+    def build_connection_pool_key_attributes(
+        self,
+        request: PreparedRequest,
+        verify: bool | str | None,
+        cert: str | tuple[str, str] | None = None,
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        host_params, pool_kwargs = super().build_connection_pool_key_attributes(
+            request, verify, cert
+        )
+        pool_kwargs["ssl_context"] = self._ssl_context
+        return host_params, pool_kwargs
 
 
 class HelloAssoAPI:
@@ -18,8 +46,8 @@ class HelloAssoAPI:
     Authentication tokens are stored in ``APICredentialRecord``.
     """
 
-    AUTH_URL = "https://api.helloasso.com/oauth2/token"
-    API_URL = "https://api.helloasso.com/v5"
+    AUTH_URL = "https://api.helloasso-sandbox.com/oauth2/token"
+    API_URL = "https://api.helloasso-sandbox.com/v5"
     TOKEN_REFRESH_THRESHOLD = timedelta(minutes=2)
 
     def _request_json(
@@ -47,14 +75,32 @@ class HelloAssoAPI:
             requests.JSONDecodeError: If the response body is not valid JSON.
             ValueError: If the decoded JSON is not an object.
         """
-        response = requests.post(
-            url,
-            data=data,
-            json=json_data,
-            headers=headers,
-            timeout=30,
-        )
-        response.raise_for_status()
+        with requests.Session() as session:
+            if settings.DEBUG:
+                session.mount("https://", _RelaxedX509HTTPAdapter())
+            response = session.post(
+                url,
+                data=data,
+                json=json_data,
+                headers=headers,
+                timeout=30,
+            )
+        try:
+            response.raise_for_status()
+        except requests.HTTPError:
+            if url == self.AUTH_URL:
+                logger.warning(
+                    "HelloAsso authentication request failed with HTTP %s.",
+                    response.status_code,
+                )
+            else:
+                logger.warning(
+                    "HelloAsso request to %s failed with HTTP %s: %s",
+                    url,
+                    response.status_code,
+                    response.text[:2000],
+                )
+            raise
         decoded = response.json()
 
         if not isinstance(decoded, dict):
