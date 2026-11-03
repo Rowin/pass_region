@@ -12,7 +12,7 @@ from django.utils.translation import gettext as _
 
 from sesame.utils import get_query_string
 
-from main.models import PaymentCase, PassRegionPayment, CardPayment
+from main.models import PaymentCase, PassRegionPayment, CardPayment, APICredentialRecord
 
 class PassRegionInline(admin.TabularInline):
     model = PassRegionPayment
@@ -81,3 +81,6 @@ class PaymentCaseAdmin(admin.ModelAdmin):
 @admin.register(CardPayment)
 class CardPaymentAdmin(admin.ModelAdmin):
     ...
+
+@admin.register(APICredentialRecord)
+class APICredentialRecord(admin.ModelAdmin): ...

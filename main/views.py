@@ -8,6 +8,13 @@ from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.exceptions import PermissionDenied
 from django.utils import timezone
 from django.contrib import messages
+from django.http import (
+    HttpRequest,
+    HttpResponse,
+    HttpResponseBadRequest,
+    HttpResponseRedirect,
+)
+from django.shortcuts import get_object_or_404
 from django.utils.translation import gettext as _
 
 from main.models import PaymentCase, PassRegionPayment, CardPayment
@@ -43,15 +50,18 @@ class PassRegionPaymentCreate(LoginRequiredMixin, CreateView):
 
 
 class CardPaymenRedirect(LoginRequiredMixin, RedirectView):
+    http_method_names = ["post"]
+
     def get_redirect_url(self, *args: Any, **kwargs: Any) -> str | None:
         payment_case = PaymentCase.objects.get(user=self.request.user)
-        try:
-            card_payment = CardPayment.objects.get(
-                payment_case=payment_case,
-                redirect_url_expires_at__time__gt=timezone.now(),
-                payment_status=CardPayment.CardPaymentChoice.WAITING_PAYMENT,
-            )
-        except ObjectDoesNotExist:
+        
+        card_payment = CardPayment.objects.filter(
+            payment_case=payment_case,
+            redirect_url_expires_at__gt=timezone.now(),
+            payment_status=CardPayment.CardPaymentChoice.WAITING_PAYMENT,
+        ).order_by("-pk").first()
+        
+        if card_payment is None:
             hello_asso_api = main.hello_asso.HelloAssoAPI()
             checkout_intent_id, redirect_url = hello_asso_api.create_checkout_intent(
                 amount=35,
@@ -62,7 +72,7 @@ class CardPaymenRedirect(LoginRequiredMixin, RedirectView):
                 payment_case=payment_case,
                 redirect_url=redirect_url,
                 checkout_intent_id=checkout_intent_id,
-                redirect_url_expires_at=timezone.now() + timezone.timedelta(minutes=15),
+                redirect_url_expires_at=timezone.now() + timezone.timedelta(minutes=10), # HelloAsso API announces 15 minutes before expiration
             )
             card_payment.save()
 
@@ -70,32 +80,63 @@ class CardPaymenRedirect(LoginRequiredMixin, RedirectView):
 
 
 class CardPaymentCallback(LoginRequiredMixin, RedirectView):
-    def get_redirect_url(self):
-        type = self.request.GET.get("type", "")
-        match type:
+    """Handle untrusted browser returns without confirming a payment.
+
+    WAITING_PAYMENT can become PAYMENT_SUCCESS pending reconciliation, or
+    PAYMENT_FAILED on an error return. Confirmed payments cannot be overwritten.
+    """
+
+    http_method_names = ["get"]
+
+    def get(
+        self,
+        request: HttpRequest,
+        callback_type: str,
+        *args: Any,
+        **kwargs: Any,
+    ) -> HttpResponse:
+        """Validate the return, enforce ownership and record provisional success."""
+        for parameter in ("checkoutIntentId", "code"):
+            if len(request.GET.getlist(parameter)) > 1:
+                return HttpResponseBadRequest(_("Paramètres de retour invalides."))
+
+        match callback_type:
             case "back":
-                ...
+                pass
             case "error" | "return":
-                checkout_intent_id = self.request.GET.get("checkoutIntentId", "")
-                card_payment = CardPayment.objects.get(
-                    checkout_intent_id=checkout_intent_id
+                checkout_intent_id = request.GET.get("checkoutIntentId")
+                if not checkout_intent_id:
+                    return HttpResponseBadRequest(_("Identifiant de paiement manquant."))
+
+                card_payment = get_object_or_404(
+                    CardPayment,
+                    checkout_intent_id=checkout_intent_id,
+                    payment_case__user=request.user,
+                )
+                # Keep the status condition in the SQL UPDATE, rather than saving
+                # a stale instance that could overwrite concurrent reconciliation.
+                # A non-waiting payment matches no rows and remains unchanged.
+                pending_payments = CardPayment.objects.filter(
+                    pk=card_payment.pk,
+                    payment_status=CardPayment.CardPaymentChoice.WAITING_PAYMENT,
                 )
 
-                if self.request.GET.get("code", "") == "succeeded":
-                    card_payment.payment_status = (
-                        CardPayment.CardPaymentChoice.PAYMENT_SUCCESS
+                if callback_type == "return" and request.GET.get("code") == "succeeded":
+                    updated = pending_payments.update(
+                        payment_status=CardPayment.CardPaymentChoice.PAYMENT_SUCCESS
                     )
-                    messages.success(self.request, _("Paiement réussi"))
-
-                else:
-                    card_payment.payment_status = (
-                        CardPayment.CardPaymentChoice.PAYMENT_FAILED
+                    if updated:
+                        messages.info(
+                            request,
+                            _("Paiement signalé comme réussi, en attente de vérification."),
+                        )
+                elif callback_type == "error":
+                    updated = pending_payments.update(
+                        payment_status=CardPayment.CardPaymentChoice.PAYMENT_FAILED
                     )
-                    messages.error(self.request, _("Paiement échoué !"))
-
-                card_payment.save()
-
+                    if updated:
+                        messages.error(request, _("Paiement échoué !"))
             case _:
-                raise ValueError()
+                return HttpResponseBadRequest(_("Type de retour invalide."))
 
-        return reverse("payment-case")
+        return HttpResponseRedirect(reverse("payment-case"))

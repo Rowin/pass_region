@@ -17,7 +17,7 @@ urlpatterns = [
     ),
     path("card-payment", views.CardPaymenRedirect.as_view(), name="card-payment"),
     path(
-        "card-payment/return",
+        "card-payment/return/<str:callback_type>",
         views.CardPaymentCallback.as_view(),
         name="card-payment-return",
     ),

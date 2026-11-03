@@ -91,8 +91,9 @@ class HelloAssoAPI:
         except requests.HTTPError:
             if url == self.AUTH_URL:
                 logger.warning(
-                    "HelloAsso authentication request failed with HTTP %s.",
+                    "HelloAsso authentication request failed with HTTP %s: %s",
                     response.status_code,
+                    response.text
                 )
             else:
                 logger.warning(
@@ -307,7 +308,11 @@ class HelloAssoAPI:
         return checkout_intent_id, redirect_url
 
     def get_callback_url(self, type: str) -> str:
+        """Build the public callback URL with its return type in the path."""
         base_url = self._get_setting("HELLO_ASSO_CALLBACK_BASE_URL")
-        callback_url = f"{urllib.parse.urljoin(base_url, reverse("card-payment-return"))}?{urllib.parse.urlencode({'type': type})}"
+        callback_url = urllib.parse.urljoin(
+            base_url,
+            reverse("card-payment-return", kwargs={"callback_type": type}),
+        )
 
         return callback_url

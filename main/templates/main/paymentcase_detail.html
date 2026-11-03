@@ -34,6 +34,9 @@
 
 <section>
     <h2>Paiement CB</h2>
-    <a href="{% url 'card-payment' %}">Paiement CB</a>
+    <form action="{% url 'card-payment' %}" method="post">
+        {% csrf_token %}
+        <input type="submit" value="Payer">
+    </form>
 </section>
 {% endblock %}
