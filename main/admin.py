@@ -28,7 +28,7 @@ class PaymentCaseAdmin(admin.ModelAdmin):
     @staticmethod
     @admin.display(description=_("Nombre de paiements pass région"))
     def pass_region_count(obj: PaymentCase) -> str:
-        return f"{obj.passregionpayment_set.count()} / {obj.required_pass_region}"
+        return f"{obj.passregionpayment_set.count()} / {obj.total_payments_required}"
 
     def save_model(self, request: HttpRequest, obj: Any, form: Any, change: Any) -> None:
         if not change:
@@ -66,7 +66,7 @@ class PaymentCaseAdmin(admin.ModelAdmin):
 
         class Meta:
             model = PaymentCase
-            fields = ["completed", "first_name", "last_name", "email", "session_number", "required_pass_region"]
+            fields = ["completed", "first_name", "last_name", "email", "session_number", "total_payments_required"]
 
         def __init__(self, *args, **kwargs):
             super().__init__(*args, **kwargs)

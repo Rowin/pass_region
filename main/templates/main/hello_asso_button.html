@@ -1,0 +1,12 @@
+<button type="button" class="ha-btn"
+  style="background:#4a8100;border:1px solid #4a8100;border-radius:4px;overflow:hidden;cursor:pointer;font:inherit;">
+
+  Payer {{ amount }} € avec HelloAsso
+</button>
+<style>
+  /* États interactifs : impossibles à exprimer en style inline */
+  .ha-btn:hover { background: #3a6600 !important; border-color: #3a6600 !important; }
+  .ha-btn:hover .ha-btn__label { background: #3a6600 !important; }
+  .ha-btn:focus-visible { outline: 3px solid #1a1a1a; outline-offset: 3px; box-shadow: 0 0 0 6px #ffffff; }
+  @media (forced-colors: active) { .ha-btn { border: 2px solid ButtonText !important; } }
+</style>

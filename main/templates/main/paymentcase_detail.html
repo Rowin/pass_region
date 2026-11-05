@@ -3,40 +3,69 @@
 {% block content %}
 <h1>Bonjour {{ payment_case.user.first_name|capfirst }} {{ payment_case.user.last_name|upper }}</h1>
 
+<p>Pour vous inscrire à la formation PSC, veuillez renseigner les informations des Pass Région à utiliser, ainsi que régler le solde par carte bancaire</p>
+
 <section>
     <h2>Pass Région</h2>
+    <p>Pour chaque titulaire du Pass Région, nous avons besoin du numéro de la carte, ainsi que du code confidentiel à 4 chiffres</p>
+    <form action="{% url 'payment-case' %}" method="post">
     <table>
         <thead>
-            <th>Titulaire</th>
+            <th colspan="2">Titulaire</th>
+            <th>Numéro de carte</th>
+            <th>Code secret</th>
             <th>Statut</th>
             <th>Commentaire</th>
         </thead>
     {% for pass_region_payment in payment_case.passregionpayment_set.all %}
         <tr>
-            <td>{{ pass_region_payment.fullname }}</td>
+            <td>{{ pass_region_payment.holder_firstname }}</td>
+            <td>{{ pass_region_payment.holder_lastname }}</td>
+            <td>{{ pass_region_payment.card_number }}</td>
+            <td>****</td>
             <td>{{ pass_region_payment.get_payment_status_display }}</td>
-            <td>{{ pass_region_payment.comment }}</td>
+            <td>{{ pass_region_payment.comment|default_if_none:'' }}</td>
         </tr>
-    {% empty %}
-        <tr><td colspan="2">Aucun paiment pass région en cours</td></tr>
+    {% endfor %}
+    {% for form in formset %}
+        <tr style="vertical-align: top">
+            <td>
+                <input type="text" name="{{ form.holder_firstname.html_name }}" placeholder="{{ form.holder_firstname.label }}" value="{{ form.holder_firstname.value|default_if_none:'' }}">
+                <small>{{ form.holder_firstname.errors.as_text }}</small>
+            </td>
+            <td>
+                <input type="text" name="{{ form.holder_lastname.html_name }}" placeholder="{{ form.holder_lastname.label }}" value="{{ form.holder_lastname.value|default_if_none:'' }}">
+                <small>{{ form.holder_lastname.errors.as_text }}</small>
+            </td>
+            <td>
+                <input type="text" name="{{ form.card_number.html_name }}" placeholder="{{ form.card_number.label }}" value="{{ form.card_number.value|default_if_none:'' }}">
+                <small>{{ form.card_number.errors.as_text }}</small>
+            </td>
+            <td>
+                <input type="password" name="{{ form.card_pin.html_name }}" placeholder="{{ form.card_pin.label }}">
+                <small>{{ form.card_pin.errors.as_text }}</small>
+            </td>
+            <td></td>
+            <td><small>{{ form.non_field_errors.as_text }}</small></td>
+        </tr>
     {% endfor %}
     </table>
+    <small>{{ formset.management_form.errors }}</small>
+    <small>{{ formset.non_form_errors.as_text }}</small>
+    {{ formset.management_form}}
+    {% csrf_token %}
 
-    <p>
-    {% if payment_case.passregionpayment_set.count < payment_case.required_pass_region %}
-        <a href="{% url 'pass-region-payment' %}" role="button">Ajouter un paiement</a>
-    {% else %}
-        <button disabled>Ajouter un paiement</button>
-    {% endif %}
-    {{ payment_case.passregionpayment_set.count }} / {{ payment_case.required_pass_region }} Pass Region requis
-    </p>
+    <p><input type="submit" value="Enregistrer les données Pass Région"></p>
+    </form>
+
 </section>
 
 <section>
     <h2>Paiement CB</h2>
+    <p>Le Pass Région ne prend en charge que 30 € par candidat. Le solde reste à votre charge. Vous pouvez régler le solde par carte bancaire en passant par Hello Asso</p>
     <form action="{% url 'card-payment' %}" method="post">
         {% csrf_token %}
-        <input type="submit" value="Payer">
+        {% include "main/hello_asso_button.html" with amount=payment_case.total_amount_required %}
     </form>
 </section>
 {% endblock %}

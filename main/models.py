@@ -16,10 +16,14 @@ class PaymentCase(models.Model):
     session_number = models.fields.CharField(
         _("Numéro de la session"), validators=[validators.RegexValidator(r"\d*")]
     )
-    required_pass_region = models.fields.IntegerField(
+    total_payments_required = models.fields.IntegerField(
         _("Nombre de paiements Pass Région requis"), default=1
     )
     completed = models.fields.BooleanField(_("Paiement complet"), default=False)
+    passregionpayment_set: models.QuerySet["PassRegionPayment"]
+
+    def total_amount_required(self):
+        return self.total_payments_required * 30
 
 
 class CardPayment(models.Model):
@@ -45,12 +49,12 @@ class CardPayment(models.Model):
 
 class PassRegionPayment(models.Model):
     class PassRegionPaymentChoice(models.TextChoices):
-        WAITING_CREDENTIALS = "WAITING_CREDENTIALS", _l(
+        WAITING_CREDENTIALS = "WC", _l(
             "En attente des identifiants Pass Région"
         )
-        WAITING_PAYMENT = "WAITING_PAYMENT", _l("En attente de prélèvement")
-        PAYMENT_REJECTED = "PAYMENT_REJECTED", _l("Prélèvement rejeté")
-        PAYMENT_APPROVED = "PAYMENT_APPROVED", _l("Prélèvement accepté")
+        WAITING_PAYMENT = "WP", _l("En attente de prélèvement")
+        PAYMENT_REJECTED = "PR", _l("Prélèvement rejeté")
+        PAYMENT_APPROVED = "PA", _l("Prélèvement accepté")
 
     class Meta:
         verbose_name = _("Paiement Pass Région")
@@ -63,7 +67,7 @@ class PassRegionPayment(models.Model):
     )
     card_pin = EncryptedCharField(_("Code PIN"), max_length=200, null=True, blank=True)
 
-    payment_status = models.fields.CharField(choices=PassRegionPaymentChoice)
+    payment_status = models.fields.CharField(choices=PassRegionPaymentChoice, default=PassRegionPaymentChoice.WAITING_PAYMENT)
     payment_date = models.fields.DateField(_("Date de paiement"), null=True, blank=True)
     payment_case = models.ForeignKey(to=PaymentCase, on_delete=models.CASCADE)
 

@@ -1,6 +1,7 @@
-from typing import Any
+from typing import Any, cast
 
-from django.db.models import QuerySet, ObjectDoesNotExist
+from django.forms import formset_factory
+from django.db.models import QuerySet
 from django.db.models.base import Model as ModelBase
 from django.views.generic import DetailView, CreateView, RedirectView
 from django.urls import reverse
@@ -25,12 +26,46 @@ import main.hello_asso
 class PaymentCaseDetail(DetailView):
     model = PaymentCase
     context_object_name = "payment_case"
+    http_method_names = ["get", "post"]
 
-    def get_object(self, queryset: QuerySet[Any, Any] | None = ...) -> ModelBase:
+    def get_object(self, queryset: QuerySet[Any, Any] | None = None) -> ModelBase:
         if self.request.user.is_authenticated:
-            return PaymentCase.objects.get(user=self.request.user)
+            return get_object_or_404(PaymentCase, user=self.request.user)
         else:
             raise PermissionDenied
+
+    def get_formset(self):
+        payment_case: PaymentCase = cast(PaymentCase, self.get_object())
+        
+        missing_pass_region: int = payment_case.total_payments_required - payment_case.passregionpayment_set.exclude(payment_status=PassRegionPayment.PassRegionPaymentChoice.PAYMENT_REJECTED).count()
+        PassRegionPaymentFormset = formset_factory(PassRegionPaymentForm, extra=missing_pass_region, max_num=missing_pass_region)
+
+        return PassRegionPaymentFormset(data=self.request.POST if self.request.method == "POST" else None)
+
+    def get_context_data(self, **kwargs: Any) -> dict[str, Any]:
+        context = super().get_context_data(**kwargs)
+
+        if "formset" not in context:
+            context["formset"] = self.get_formset()
+
+        return context
+
+    def post(self, request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponse:
+        self.object = self.get_object()
+        payment_case: PaymentCase = cast(PaymentCase, self.object)
+        formset = self.get_formset()
+
+        if not formset.is_valid():
+            return self.render_to_response(self.get_context_data(formset=formset))
+
+        for form in formset:
+            if not form.has_changed():
+                continue
+
+            form.instance.payment_case = payment_case
+            form.save()
+
+        return HttpResponseRedirect(reverse("payment-case"))
 
 
 class PassRegionPaymentCreate(LoginRequiredMixin, CreateView):
@@ -64,8 +99,8 @@ class CardPaymenRedirect(LoginRequiredMixin, RedirectView):
         if card_payment is None:
             hello_asso_api = main.hello_asso.HelloAssoAPI()
             checkout_intent_id, redirect_url = hello_asso_api.create_checkout_intent(
-                amount=35,
-                message="Coucou",
+                amount=payment_case.total_amount_required(),
+                message="",
             )
 
             card_payment = CardPayment(
