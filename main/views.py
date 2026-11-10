@@ -100,7 +100,7 @@ class CardPaymenRedirect(LoginRequiredMixin, RedirectView):
             hello_asso_api = main.hello_asso.HelloAssoAPI()
             checkout_intent_id, redirect_url = hello_asso_api.create_checkout_intent(
                 amount=payment_case.total_amount_required(),
-                message="",
+                message="Coucou",
             )
 
             card_payment = CardPayment(

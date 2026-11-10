@@ -3,12 +3,18 @@ import ssl
 from unittest.mock import Mock, patch
 
 import requests
+from probatio import Invalid
 from django.core.exceptions import ImproperlyConfigured
 from django.test import TestCase, override_settings
 from django.utils import timezone
 from django.utils.timezone import timedelta
 
-from main.hello_asso import HelloAssoAPI, _RelaxedX509HTTPAdapter
+from main.hello_asso import (
+    CHECKOUT_INTENT_RESPONSE_SCHEMA,
+    TOKEN_RESPONSE_SCHEMA,
+    HelloAssoAPI,
+    _RelaxedX509HTTPAdapter,
+)
 from main.models import APICredentialRecord
 
 
@@ -21,6 +27,35 @@ class HelloAssoAPITests(TestCase):
     def setUp(self) -> None:
         """Create a client for each test case."""
         self.api = HelloAssoAPI()
+
+    def test_token_schema_rejects_invalid_expiration_and_extra_fields(self) -> None:
+        """Require positive string seconds and reject undocumented token fields."""
+        for expires_in in ("0", "-1", "1.5", "", 3600, True):
+            with self.subTest(expires_in=expires_in):
+                with self.assertRaises(Invalid):
+                    TOKEN_RESPONSE_SCHEMA({
+                        "access_token": "access",
+                        "refresh_token": "refresh",
+                        "expires_in": expires_in,
+                    })
+        with self.assertRaises(Invalid):
+            TOKEN_RESPONSE_SCHEMA({
+                "access_token": "access",
+                "refresh_token": "refresh",
+                "expires_in": "3600",
+                "unknown": "value",
+            })
+
+    def test_checkout_schema_rejects_null_url_and_extra_fields(self) -> None:
+        """Reject unusable redirect URLs and undocumented checkout fields."""
+        for payload in (
+            {"id": 123, "redirectUrl": None},
+            {"id": 123, "redirectUrl": ""},
+            {"id": 123, "redirectUrl": "https://example.com", "unknown": "value"},
+        ):
+            with self.subTest(payload=payload):
+                with self.assertRaises(Invalid):
+                    CHECKOUT_INTENT_RESPONSE_SCHEMA(payload)
 
     @staticmethod
     def response(payload: dict[str, object]) -> Mock:
@@ -208,7 +243,7 @@ class HelloAssoAPITests(TestCase):
         self,
         post: Mock,
     ) -> None:
-        """Check refresh-token use and persistence of the rotated token pair."""
+        """Check form-encoded refresh and persistence of the rotated token pair."""
         credential = APICredentialRecord.objects.create(
             refresh_token="old-refresh-token",
             access_token="expired-access-token",
@@ -232,15 +267,152 @@ class HelloAssoAPITests(TestCase):
         refresh_call = post.call_args_list[0]
         self.assertEqual(refresh_call.args[0], HelloAssoAPI.AUTH_URL)
         self.assertEqual(
-            refresh_call.kwargs["json"],
+            refresh_call.kwargs["data"],
             {
                 "grant_type": "refresh_token",
                 "refresh_token": "old-refresh-token",
             },
         )
+        self.assertIsNone(refresh_call.kwargs["json"])
+        self.assertEqual(
+            refresh_call.kwargs["headers"]["Content-Type"],
+            "application/x-www-form-urlencoded",
+        )
         credential.refresh_from_db()
         self.assertEqual(credential.access_token, "refreshed-access-token")
         self.assertEqual(credential.refresh_token, "rotated-refresh-token")
+
+    @patch("main.hello_asso.requests.Session.post")
+    def test_refresh_http_error_falls_back_to_full_auth_once(self, post: Mock) -> None:
+        """Recover from any refresh HTTP error and replace the stored token pair."""
+        credential = APICredentialRecord.objects.create(
+            refresh_token="rejected-refresh-token",
+            access_token="expired-access-token",
+            access_token_expires_at=timezone.now() - timedelta(seconds=1),
+        )
+        rejected = self.response({})
+        rejected.status_code = 500
+        rejected.text = "Authentication failed"
+        rejected.raise_for_status.side_effect = requests.HTTPError(response=rejected)
+        post.side_effect = [
+            rejected,
+            self.response({
+                "access_token": "new-access-token",
+                "refresh_token": "new-refresh-token",
+                "expires_in": "3600",
+            }),
+            self.response({"redirectUrl": "https://www.helloasso.com/checkout/new"}),
+        ]
+
+        self.create_checkout(5, "Payment")
+
+        self.assertEqual(post.call_count, 3)
+        self.assertEqual(
+            post.call_args_list[0].kwargs["data"],
+            {
+                "grant_type": "refresh_token",
+                "refresh_token": "rejected-refresh-token",
+            },
+        )
+        self.assertEqual(
+            post.call_args_list[1].kwargs["data"],
+            {
+                "grant_type": "client_credentials",
+                "client_id": "test-client-id",
+                "client_secret": "test-client-secret",
+            },
+        )
+        credential.refresh_from_db()
+        self.assertEqual(credential.access_token, "new-access-token")
+        self.assertEqual(credential.refresh_token, "new-refresh-token")
+        self.assertEqual(APICredentialRecord.objects.count(), 1)
+
+    @patch("main.hello_asso.requests.Session.post")
+    def test_full_auth_failure_after_refresh_is_not_retried(self, post: Mock) -> None:
+        """Propagate the second HTTP error without changing stored credentials."""
+        credential = APICredentialRecord.objects.create(
+            refresh_token="old-refresh-token",
+            access_token="expired-access-token",
+            access_token_expires_at=timezone.now() - timedelta(seconds=1),
+        )
+        rejected = self.response({})
+        rejected.status_code = 401
+        rejected.text = "Authentication failed"
+        error = requests.HTTPError(response=rejected)
+        rejected.raise_for_status.side_effect = error
+        post.return_value = rejected
+
+        with self.assertRaises(requests.HTTPError) as caught:
+            self.create_checkout(5, "Payment")
+
+        self.assertIs(caught.exception, error)
+        self.assertEqual(post.call_count, 2)
+        credential.refresh_from_db()
+        self.assertEqual(credential.refresh_token, "old-refresh-token")
+        self.assertEqual(credential.access_token, "expired-access-token")
+
+    @patch("main.hello_asso.requests.Session.post")
+    def test_refresh_network_error_does_not_trigger_full_auth(self, post: Mock) -> None:
+        """A transport failure does not fall back to client credentials."""
+        APICredentialRecord.objects.create(
+            refresh_token="old-refresh-token",
+            access_token="expired-access-token",
+            access_token_expires_at=timezone.now() - timedelta(seconds=1),
+        )
+        post.side_effect = requests.Timeout("Request timed out")
+
+        with self.assertRaises(requests.Timeout):
+            self.create_checkout(5, "Payment")
+
+        post.assert_called_once()
+
+    @patch("main.hello_asso.requests.Session.post")
+    def test_full_auth_fallback_requires_a_new_refresh_token(self, post: Mock) -> None:
+        """Do not reuse the rejected refresh token after incomplete full auth."""
+        credential = APICredentialRecord.objects.create(
+            refresh_token="old-refresh-token",
+            access_token="expired-access-token",
+            access_token_expires_at=timezone.now() - timedelta(seconds=1),
+        )
+        post.side_effect = [
+            requests.HTTPError("Refresh rejected"),
+            self.response({"access_token": "new-access-token", "expires_in": "3600"}),
+        ]
+
+        with self.assertRaises(Invalid):
+            self.create_checkout(5, "Payment")
+
+        self.assertEqual(post.call_count, 2)
+        credential.refresh_from_db()
+        self.assertEqual(credential.refresh_token, "old-refresh-token")
+        self.assertEqual(credential.access_token, "expired-access-token")
+
+    @patch("main.hello_asso.requests.Session.post")
+    def test_refresh_requires_a_new_refresh_token(self, post: Mock) -> None:
+        """Reject incomplete refresh responses without modifying stored credentials."""
+        credential = APICredentialRecord.objects.create(
+            refresh_token="old-refresh-token",
+            access_token="expired-access-token",
+            access_token_expires_at=timezone.now() - timedelta(seconds=1),
+        )
+        for refresh_token in (None, "", 123):
+            with self.subTest(refresh_token=refresh_token):
+                post.reset_mock()
+                payload: dict[str, object] = {
+                    "access_token": "new-access-token",
+                    "expires_in": "3600",
+                }
+                if refresh_token is not None:
+                    payload["refresh_token"] = refresh_token
+                post.return_value = self.response(payload)
+
+                with self.assertRaises(Invalid):
+                    self.create_checkout(5, "Payment")
+
+                post.assert_called_once()
+                credential.refresh_from_db()
+                self.assertEqual(credential.refresh_token, "old-refresh-token")
+                self.assertEqual(credential.access_token, "expired-access-token")
 
     @override_settings(HELLO_ASSO_CLIENT_ID="", HELLO_ASSO_CLIENT_SECRET="")
     @patch("main.hello_asso.requests.Session.post")
@@ -274,7 +446,7 @@ class HelloAssoAPITests(TestCase):
         post.assert_not_called()
 
     @patch("main.hello_asso.requests.Session.post")
-    def test_missing_redirect_url_raises_value_error(self, post: Mock) -> None:
+    def test_missing_redirect_url_raises_validation_error(self, post: Mock) -> None:
         """Check a checkout response without a redirect URL is rejected."""
         APICredentialRecord.objects.create(
             refresh_token="cached-refresh-token",
@@ -283,7 +455,7 @@ class HelloAssoAPITests(TestCase):
         )
         post.return_value = self.response({"id": 123})
 
-        with self.assertRaises(ValueError):
+        with self.assertRaises(Invalid):
             self.create_checkout(1, "Payment")
 
     @override_settings(HELLO_ASSO_ORGANIZATION_SLUG="")

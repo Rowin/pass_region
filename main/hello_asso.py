@@ -5,6 +5,7 @@ from typing import Any, cast
 import urllib.parse
 
 import requests
+from probatio import All, Length, Match, Optional, Range, Required, Schema
 from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
 from django.utils import timezone
@@ -17,6 +18,32 @@ from django.urls import reverse
 from main.models import APICredentialRecord
 
 logger = logging.getLogger(__name__)
+
+TOKEN_RESPONSE_SCHEMA = Schema(
+    {
+        Required("access_token"): All(str, Length(min=1)),
+        Required("refresh_token"): All(str, Length(min=1)),
+        Optional("token_type"): "bearer",
+        Required("expires_in"): All(str, Match(r"\A0*[1-9][0-9]*\Z")),
+    },
+)
+"""Validate token responses; expires_in remains a positive seconds string.
+
+Tokens and expiration are required by the client even though the reference
+does not mark them as required. Undocumented response fields are rejected.
+"""
+
+CHECKOUT_INTENT_RESPONSE_SCHEMA = Schema(
+    {
+        Required("id"): All(int, Range(min=1, max=2147483647)),
+        Required("redirectUrl"): All(str, Length(min=1)),
+    },
+)
+"""Validate checkout creation responses with a positive int32 ID.
+
+The client requires both fields and a non-empty redirectUrl, although the
+reference allows omitted fields and a null redirectUrl. Extra fields are rejected.
+"""
 
 
 class _RelaxedX509HTTPAdapter(HTTPAdapter):
@@ -135,6 +162,7 @@ class HelloAssoAPI:
 
         If a credential record exists, its refresh token is used. Otherwise,
         client credentials are sent to obtain the initial tokens.
+        Both grants use form encoding as specified in the authentication guide.
 
         Args:
             credential: Existing credential record to refresh, or ``None`` for
@@ -147,26 +175,26 @@ class HelloAssoAPI:
             ImproperlyConfigured: If the initial client credentials are missing.
             requests.RequestException: If an HTTP or network error occurs.
             ValueError: If the response body is not a valid JSON object.
+            probatio.Invalid: If the token response does not match its schema.
         """
         if credential is not None:
-            return self._request_json(
-                self.AUTH_URL,
-                json_data={
-                    "grant_type": "refresh_token",
-                    "refresh_token": credential.refresh_token,
-                },
-                headers={"Content-Type": "application/json"},
-            )
-
-        return self._request_json(
-            self.AUTH_URL,
-            data={
+            data = {
+                "grant_type": "refresh_token",
+                "refresh_token": credential.refresh_token,
+            }
+        else:
+            data = {
                 "grant_type": "client_credentials",
                 "client_id": self._get_setting("HELLO_ASSO_CLIENT_ID"),
                 "client_secret": self._get_setting("HELLO_ASSO_CLIENT_SECRET"),
-            },
+            }
+
+        response = self._request_json(
+            self.AUTH_URL,
+            data=data,
             headers={"Content-Type": "application/x-www-form-urlencoded"},
         )
+        return TOKEN_RESPONSE_SCHEMA(response)
 
     def _access_token(self) -> str:
         """Return a valid access token, refreshing it when necessary.
@@ -174,6 +202,8 @@ class HelloAssoAPI:
         A token with less remaining lifetime than the safety threshold is
         refreshed using the refresh token. Newly received tokens are saved to
         ``APICredentialRecord``.
+        Any refresh HTTP error triggers one client-credentials attempt, regardless
+        of the refresh token's age. Network errors and full-auth errors propagate.
 
         Returns:
             A Hello Asso access token.
@@ -181,7 +211,8 @@ class HelloAssoAPI:
         Raises:
             ImproperlyConfigured: If the initial client credentials are missing.
             requests.RequestException: If an HTTP or network error occurs.
-            ValueError: If the authentication response is incomplete or invalid.
+            ValueError: If the response body is not a valid JSON object.
+            probatio.Invalid: If the authentication response violates its schema.
         """
         credential = APICredentialRecord.objects.order_by(
             "-access_token_expires_at"
@@ -193,31 +224,18 @@ class HelloAssoAPI:
         ):
             return credential.access_token
 
-        token_data = self._token_response(credential)
-        access_token = token_data.get("access_token")
-        if not isinstance(access_token, str) or not access_token:
-            raise ValueError(_("La réponse Hello Asso ne contient pas d'access_token."))
-
-        refresh_token = token_data.get("refresh_token")
-        if not isinstance(refresh_token, str) or not refresh_token:
-            if credential is None:
-                raise ValueError(
-                    _("La réponse Hello Asso ne contient pas de refresh_token.")
-                )
-            refresh_token = credential.refresh_token
-
         try:
-            expires_in = int(token_data["expires_in"])
-        except (KeyError, TypeError, ValueError) as error:
-            raise ValueError(
-                _(
-                    "La réponse Hello Asso ne contient pas de durée de validité exploitable."
-                )
-            ) from error
-        if expires_in <= 0:
-            raise ValueError(
-                _("La durée de validité du token Hello Asso doit être positive.")
+            token_data = self._token_response(credential)
+        except requests.HTTPError:
+            if credential is None:
+                raise
+            logger.warning(
+                "HelloAsso token refresh failed; attempting client authentication once."
             )
+            token_data = self._token_response(None)
+        access_token = token_data["access_token"]
+        refresh_token = token_data["refresh_token"]
+        expires_in = int(token_data["expires_in"])
 
         expires_at = now + timedelta(seconds=expires_in)
         if credential is None:
@@ -257,7 +275,7 @@ class HelloAssoAPI:
                 (defaults to ``False``).
 
         Returns:
-            The ``redirectUrl`` returned by Hello Asso.
+            The checkout intent ID and ``redirectUrl`` returned by Hello Asso.
 
         Raises:
             ImproperlyConfigured: If the organization slug or the client
@@ -266,6 +284,7 @@ class HelloAssoAPI:
                 invalid.
             requests.HTTPError: If Hello Asso returns an HTTP error status.
             requests.RequestException: If a network transport error occurs.
+            probatio.Invalid: If a token or checkout response violates its schema.
         """
         amount_in_cents = Decimal(str(amount)) * 100
         if amount_in_cents != amount_in_cents.to_integral_value():
@@ -297,15 +316,8 @@ class HelloAssoAPI:
                 "Content-Type": "application/json",
             },
         )
-        redirect_url = response.get("redirectUrl")
-        checkout_intent_id = response.get("id")
-        if not isinstance(redirect_url, str) or not redirect_url:
-            raise ValueError(_("La réponse Hello Asso ne contient pas de redirectUrl."))
-
-        if not isinstance(checkout_intent_id, int) or not checkout_intent_id:
-            raise ValueError(response)
-
-        return checkout_intent_id, redirect_url
+        validated_response = CHECKOUT_INTENT_RESPONSE_SCHEMA(response)
+        return validated_response["id"], validated_response["redirectUrl"]
 
     def get_callback_url(self, type: str) -> str:
         """Build the public callback URL with its return type in the path."""
