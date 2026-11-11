@@ -1,8 +1,10 @@
-from django.db import models
+from typing import Any
+
+from django.conf import settings
 from django.core import validators
+from django.db import models
 from django.utils.translation import gettext as _
 from django.utils.translation import gettext_lazy as _l
-from django.conf import settings
 
 from main.fields import EncryptedCharField
 
@@ -39,19 +41,18 @@ class CardPayment(models.Model):
         indexes = [models.Index(fields=["checkout_intent_id"])]
 
     checkout_intent_id = models.fields.CharField(unique=True)
-    redirect_url = models.fields.URLField()
+    redirect_url = models.fields.URLField(max_length=500)
     redirect_url_expires_at = models.DateTimeField()
     payment_status = models.fields.CharField(
         choices=CardPaymentChoice, default=CardPaymentChoice.WAITING_PAYMENT
     )
+    payment_confirmation_received_at = models.DateTimeField(blank=True, null=True)
     payment_case = models.ForeignKey(to=PaymentCase, on_delete=models.CASCADE)
 
 
 class PassRegionPayment(models.Model):
     class PassRegionPaymentChoice(models.TextChoices):
-        WAITING_CREDENTIALS = "WC", _l(
-            "En attente des identifiants Pass Région"
-        )
+        WAITING_CREDENTIALS = "WC", _l("En attente des identifiants Pass Région")
         WAITING_PAYMENT = "WP", _l("En attente de prélèvement")
         PAYMENT_REJECTED = "PR", _l("Prélèvement rejeté")
         PAYMENT_APPROVED = "PA", _l("Prélèvement accepté")
@@ -67,7 +68,9 @@ class PassRegionPayment(models.Model):
     )
     card_pin = EncryptedCharField(_("Code PIN"), max_length=200, null=True, blank=True)
 
-    payment_status = models.fields.CharField(choices=PassRegionPaymentChoice, default=PassRegionPaymentChoice.WAITING_PAYMENT)
+    payment_status = models.fields.CharField(
+        choices=PassRegionPaymentChoice, default=PassRegionPaymentChoice.WAITING_PAYMENT
+    )
     payment_date = models.fields.DateField(_("Date de paiement"), null=True, blank=True)
     payment_case = models.ForeignKey(to=PaymentCase, on_delete=models.CASCADE)
 
@@ -77,7 +80,7 @@ class PassRegionPayment(models.Model):
     def fullname(self) -> str:
         return f"{self.holder_firstname.capitalize()} {self.holder_lastname.upper()}"
 
-    def save(self, *args, **kwargs):
+    def save(self, *args: Any, **kwargs: Any):
         if self.payment_status in (
             self.PassRegionPaymentChoice.PAYMENT_APPROVED,
             self.PassRegionPaymentChoice.PAYMENT_REJECTED,

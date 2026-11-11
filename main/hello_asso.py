@@ -1,49 +1,23 @@
-from decimal import Decimal
 import logging
 import ssl
-from typing import Any, cast
 import urllib.parse
+from decimal import Decimal
+from typing import Any, cast
 
 import requests
-from probatio import All, Length, Match, Optional, Range, Required, Schema
 from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
+from django.urls import reverse
 from django.utils import timezone
 from django.utils.timezone import timedelta
 from django.utils.translation import gettext as _
 from requests.adapters import HTTPAdapter
 from requests.models import PreparedRequest
-from django.urls import reverse
 
 from main.models import APICredentialRecord
+from main.schemas import CHECKOUT_INTENT_RESPONSE_SCHEMA, TOKEN_RESPONSE_SCHEMA
 
 logger = logging.getLogger(__name__)
-
-TOKEN_RESPONSE_SCHEMA = Schema(
-    {
-        Required("access_token"): All(str, Length(min=1)),
-        Required("refresh_token"): All(str, Length(min=1)),
-        Optional("token_type"): "bearer",
-        Required("expires_in"): All(str, Match(r"\A0*[1-9][0-9]*\Z")),
-    },
-)
-"""Validate token responses; expires_in remains a positive seconds string.
-
-Tokens and expiration are required by the client even though the reference
-does not mark them as required. Undocumented response fields are rejected.
-"""
-
-CHECKOUT_INTENT_RESPONSE_SCHEMA = Schema(
-    {
-        Required("id"): All(int, Range(min=1, max=2147483647)),
-        Required("redirectUrl"): All(str, Length(min=1)),
-    },
-)
-"""Validate checkout creation responses with a positive int32 ID.
-
-The client requires both fields and a non-empty redirectUrl, although the
-reference allows omitted fields and a null redirectUrl. Extra fields are rejected.
-"""
 
 
 class _RelaxedX509HTTPAdapter(HTTPAdapter):
@@ -57,7 +31,7 @@ class _RelaxedX509HTTPAdapter(HTTPAdapter):
     def build_connection_pool_key_attributes(
         self,
         request: PreparedRequest,
-        verify: bool | str | None,
+        verify: bool | str,
         cert: str | tuple[str, str] | None = None,
     ) -> tuple[dict[str, Any], dict[str, Any]]:
         host_params, pool_kwargs = super().build_connection_pool_key_attributes(
@@ -113,6 +87,7 @@ class HelloAssoAPI:
                 headers=headers,
                 timeout=30,
             )
+            print(data, headers, json_data)
         try:
             response.raise_for_status()
         except requests.HTTPError:
@@ -120,7 +95,7 @@ class HelloAssoAPI:
                 logger.warning(
                     "HelloAsso authentication request failed with HTTP %s: %s",
                     response.status_code,
-                    response.text
+                    response.text,
                 )
             else:
                 logger.warning(
@@ -131,6 +106,7 @@ class HelloAssoAPI:
                 )
             raise
         decoded = response.json()
+        print(decoded)
 
         if not isinstance(decoded, dict):
             raise ValueError(_("Hello Asso a retourné une réponse JSON invalide."))

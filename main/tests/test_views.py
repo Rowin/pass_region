@@ -1,7 +1,10 @@
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from django.test import RequestFactory, TestCase, override_settings
+from django.contrib.auth import get_user_model
+from django.test import Client, RequestFactory, TestCase, override_settings
+from django.urls import reverse
+from django.utils import timezone
 
 from main.models import CardPayment, PaymentCase
 from main.views import CardPaymenRedirect
@@ -47,4 +50,45 @@ class CardPaymentRedirectTests(TestCase):
             return_url=callback_url,
             error_url=callback_url,
             back_url=callback_url,
+        )
+
+
+class WebhookTests(TestCase):
+    def setUp(self):
+        user = get_user_model().objects.create_user(
+            username="username",
+            first_name="Firstname",
+            last_name="Lastname",
+            email="email@email.test",
+            password=None,
+            is_staff=False,
+            is_superuser=False,
+        )
+        payment_case = PaymentCase.objects.create(user=user, session_number=123456)
+        self.card_payment = CardPayment.objects.create(
+            checkout_intent_id=12345,
+            redirect_url="example.com",
+            redirect_url_expires_at=timezone.now(),
+            payment_case=payment_case,
+            payment_status=CardPayment.CardPaymentChoice.WAITING_PAYMENT,
+        )
+
+        self.client = Client()
+
+    def test_successful_webhook(self):
+        self.client.post(
+            reverse("webhook"),
+            content_type="application/json",
+            data={
+                "data": {
+                    "payments": [{"state": "Authorized"}],
+                    "checkoutIntentId": 12345,
+                },
+                "eventType": "Order",
+            },
+        )
+        self.card_payment.refresh_from_db()
+        self.assertEqual(
+            self.card_payment.payment_status,
+            CardPayment.CardPaymentChoice.PAYMENT_CONFIRMED,
         )

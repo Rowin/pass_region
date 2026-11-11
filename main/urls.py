@@ -1,13 +1,12 @@
-from django.urls import path
 from django.contrib import admin
 from django.contrib.auth.views import LogoutView
-
+from django.urls import path
+from django.urls.resolvers import URLPattern, URLResolver
 from sesame.views import LoginView
-from debug_toolbar.toolbar import debug_toolbar_urls
 
 import main.views as views
 
-urlpatterns = [
+urlpatterns: list[URLResolver | URLPattern] = [
     path("admin/", admin.site.urls),
     path("me/payments/", views.PaymentCaseDetail.as_view(), name="payment-case"),
     path(
@@ -21,6 +20,9 @@ urlpatterns = [
         views.CardPaymentCallback.as_view(),
         name="card-payment-return",
     ),
+    path(
+        "hook/", views.HelloAssoWebHhook.as_view(), name="webhook"
+    ),  # TODO: Secure webhook by using a unique uuid for each authorized webhook
     path("login/auth/", LoginView.as_view(next_page="payment-case"), name="login"),
     path("logout/", LogoutView.as_view(), name="logout"),
-] + debug_toolbar_urls()
+]

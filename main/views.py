@@ -1,14 +1,13 @@
+import json
+import logging
 from typing import Any, cast
 
-from django.forms import formset_factory
-from django.db.models import QuerySet
-from django.db.models.base import Model as ModelBase
-from django.views.generic import DetailView, CreateView, RedirectView
-from django.urls import reverse
+from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.exceptions import PermissionDenied
-from django.utils import timezone
-from django.contrib import messages
+from django.db.models import QuerySet
+from django.db.models.base import Model as ModelBase
+from django.forms import BaseFormSet, formset_factory
 from django.http import (
     HttpRequest,
     HttpResponse,
@@ -16,11 +15,19 @@ from django.http import (
     HttpResponseRedirect,
 )
 from django.shortcuts import get_object_or_404
+from django.urls import reverse
+from django.utils import decorators, timezone
 from django.utils.translation import gettext as _
+from django.views.decorators import csrf
+from django.views.generic import CreateView, DetailView, RedirectView, View
+from probatio import Invalid
 
-from main.models import PaymentCase, PassRegionPayment, CardPayment
-from main.forms import PassRegionPaymentForm
 import main.hello_asso
+import main.schemas
+from main.forms import PassRegionPaymentForm
+from main.models import CardPayment, PassRegionPayment, PaymentCase
+
+logger = logging.getLogger(__name__)
 
 
 class PaymentCaseDetail(DetailView):
@@ -36,11 +43,22 @@ class PaymentCaseDetail(DetailView):
 
     def get_formset(self):
         payment_case: PaymentCase = cast(PaymentCase, self.get_object())
-        
-        missing_pass_region: int = payment_case.total_payments_required - payment_case.passregionpayment_set.exclude(payment_status=PassRegionPayment.PassRegionPaymentChoice.PAYMENT_REJECTED).count()
-        PassRegionPaymentFormset = formset_factory(PassRegionPaymentForm, extra=missing_pass_region, max_num=missing_pass_region)
 
-        return PassRegionPaymentFormset(data=self.request.POST if self.request.method == "POST" else None)
+        missing_pass_region: int = (
+            payment_case.total_payments_required
+            - payment_case.passregionpayment_set.exclude(
+                payment_status=PassRegionPayment.PassRegionPaymentChoice.PAYMENT_REJECTED
+            ).count()
+        )
+        PassRegionPaymentFormset = formset_factory(
+            PassRegionPaymentForm,
+            extra=missing_pass_region,
+            max_num=missing_pass_region,
+        )
+
+        return PassRegionPaymentFormset(
+            data=self.request.POST if self.request.method == "POST" else None
+        )
 
     def get_context_data(self, **kwargs: Any) -> dict[str, Any]:
         context = super().get_context_data(**kwargs)
@@ -89,13 +107,17 @@ class CardPaymenRedirect(LoginRequiredMixin, RedirectView):
 
     def get_redirect_url(self, *args: Any, **kwargs: Any) -> str | None:
         payment_case = PaymentCase.objects.get(user=self.request.user)
-        
-        card_payment = CardPayment.objects.filter(
-            payment_case=payment_case,
-            redirect_url_expires_at__gt=timezone.now(),
-            payment_status=CardPayment.CardPaymentChoice.WAITING_PAYMENT,
-        ).order_by("-pk").first()
-        
+
+        card_payment = (
+            CardPayment.objects.filter(
+                payment_case=payment_case,
+                redirect_url_expires_at__gt=timezone.now(),
+                payment_status=CardPayment.CardPaymentChoice.WAITING_PAYMENT,
+            )
+            .order_by("-pk")
+            .first()
+        )
+
         if card_payment is None:
             hello_asso_api = main.hello_asso.HelloAssoAPI()
             checkout_intent_id, redirect_url = hello_asso_api.create_checkout_intent(
@@ -107,7 +129,10 @@ class CardPaymenRedirect(LoginRequiredMixin, RedirectView):
                 payment_case=payment_case,
                 redirect_url=redirect_url,
                 checkout_intent_id=checkout_intent_id,
-                redirect_url_expires_at=timezone.now() + timezone.timedelta(minutes=10), # HelloAsso API announces 15 minutes before expiration
+                redirect_url_expires_at=timezone.now()
+                + timezone.timedelta(
+                    minutes=10
+                ),  # HelloAsso API announces 15 minutes before expiration
             )
             card_payment.save()
 
@@ -141,7 +166,9 @@ class CardPaymentCallback(LoginRequiredMixin, RedirectView):
             case "error" | "return":
                 checkout_intent_id = request.GET.get("checkoutIntentId")
                 if not checkout_intent_id:
-                    return HttpResponseBadRequest(_("Identifiant de paiement manquant."))
+                    return HttpResponseBadRequest(
+                        _("Identifiant de paiement manquant.")
+                    )
 
                 card_payment = get_object_or_404(
                     CardPayment,
@@ -163,7 +190,9 @@ class CardPaymentCallback(LoginRequiredMixin, RedirectView):
                     if updated:
                         messages.info(
                             request,
-                            _("Paiement signalé comme réussi, en attente de vérification."),
+                            _(
+                                "Paiement signalé comme réussi, en attente de vérification."
+                            ),
                         )
                 elif callback_type == "error":
                     updated = pending_payments.update(
@@ -175,3 +204,32 @@ class CardPaymentCallback(LoginRequiredMixin, RedirectView):
                 return HttpResponseBadRequest(_("Type de retour invalide."))
 
         return HttpResponseRedirect(reverse("payment-case"))
+
+
+@decorators.method_decorator(csrf.csrf_exempt, "dispatch")
+class HelloAssoWebHhook(View):
+    http_method_names = ["post"]
+
+    def post(self, request: HttpRequest):
+        try:
+            data = main.schemas.WEBHOOK_REQUEST_SCHEMA(json.loads(request.body))
+        except Invalid as err:
+            logger.warning(
+                f"Receiving unexpected webhook request, schema parsing failed with: {err}"
+            )
+            return HttpResponse()
+        except json.JSONDecodeError as err:
+            logger.warning("Failed to decode webhook data: %s", err)
+            return HttpResponse()
+
+        card_payment = CardPayment.objects.filter(
+            checkout_intent_id=data["data"]["checkoutIntentId"]
+        )
+
+        if data["data"]["payments"][0]["state"] == "Authorized":
+            card_payment.update(
+                payment_status=CardPayment.CardPaymentChoice.PAYMENT_CONFIRMED,
+                payment_confirmation_received_at=timezone.now(),
+            )
+
+        return HttpResponse()

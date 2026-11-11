@@ -57,13 +57,12 @@ class CardPaymentCallbackTests(SimpleTestCase):
         self.assertEqual(response.status_code, 302)
         self.assertEqual(response["Location"], reverse("payment-case"))
         self.lookup.assert_called_once_with(
-            CardPayment,
-            checkout_intent_id="123", payment_case__user=self.user
+            CardPayment, checkout_intent_id="123", payment_case__user=self.user
         )
         self.manager.assert_called_once_with(
             checkout_intent_id="123",
             payment_case__user=self.user,
-            payment_status=CardPayment.CardPaymentChoice.WAITING_PAYMENT
+            payment_status=CardPayment.CardPaymentChoice.WAITING_PAYMENT,
         )
         self.pending_payments.update.assert_called_once_with(
             payment_status=CardPayment.CardPaymentChoice.PAYMENT_SUCCESS
@@ -85,7 +84,7 @@ class CardPaymentCallbackTests(SimpleTestCase):
         self.manager.assert_called_once_with(
             checkout_intent_id="123",
             payment_case__user=self.user,
-            payment_status=CardPayment.CardPaymentChoice.WAITING_PAYMENT
+            payment_status=CardPayment.CardPaymentChoice.WAITING_PAYMENT,
         )
 
     def test_unknown_or_other_users_payment_is_not_found(self) -> None:
@@ -94,9 +93,7 @@ class CardPaymentCallbackTests(SimpleTestCase):
             with self.subTest(callback_type=callback_type):
                 self.lookup.side_effect = Http404
                 with self.assertRaises(Http404):
-                    self.callback(
-                        callback_type, "checkoutIntentId=123&code=succeeded"
-                    )
+                    self.callback(callback_type, "checkoutIntentId=123&code=succeeded")
                 self.pending_payments.update.assert_not_called()
 
     def test_error_marks_only_waiting_payments_as_failed(self) -> None:
@@ -106,7 +103,7 @@ class CardPaymentCallbackTests(SimpleTestCase):
         self.manager.assert_called_once_with(
             checkout_intent_id="123",
             payment_case__user=self.user,
-            payment_status=CardPayment.CardPaymentChoice.WAITING_PAYMENT
+            payment_status=CardPayment.CardPaymentChoice.WAITING_PAYMENT,
         )
         self.pending_payments.update.assert_called_once_with(
             payment_status=CardPayment.CardPaymentChoice.PAYMENT_FAILED
@@ -124,7 +121,7 @@ class CardPaymentCallbackTests(SimpleTestCase):
         self.manager.assert_called_once_with(
             checkout_intent_id="123",
             payment_case__user=self.user,
-            payment_status=CardPayment.CardPaymentChoice.WAITING_PAYMENT
+            payment_status=CardPayment.CardPaymentChoice.WAITING_PAYMENT,
         )
         self.payment.save.assert_not_called()
 
@@ -155,7 +152,8 @@ class CardPaymentCallbackTests(SimpleTestCase):
                 self.assertEqual(response.status_code, 302)
                 self.lookup.assert_called_once_with(
                     CardPayment,
-                    checkout_intent_id=identifier, payment_case__user=self.user
+                    checkout_intent_id=identifier,
+                    payment_case__user=self.user,
                 )
 
     def test_malformed_callbacks_are_bad_requests(self) -> None:

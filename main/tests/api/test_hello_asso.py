@@ -1,13 +1,13 @@
-from decimal import Decimal
 import ssl
+from decimal import Decimal
 from unittest.mock import Mock, patch
 
 import requests
-from probatio import Invalid
 from django.core.exceptions import ImproperlyConfigured
 from django.test import TestCase, override_settings
 from django.utils import timezone
 from django.utils.timezone import timedelta
+from probatio import Invalid
 
 from main.hello_asso import (
     CHECKOUT_INTENT_RESPONSE_SCHEMA,
@@ -33,18 +33,22 @@ class HelloAssoAPITests(TestCase):
         for expires_in in ("0", "-1", "1.5", "", 3600, True):
             with self.subTest(expires_in=expires_in):
                 with self.assertRaises(Invalid):
-                    TOKEN_RESPONSE_SCHEMA({
-                        "access_token": "access",
-                        "refresh_token": "refresh",
-                        "expires_in": expires_in,
-                    })
+                    TOKEN_RESPONSE_SCHEMA(
+                        {
+                            "access_token": "access",
+                            "refresh_token": "refresh",
+                            "expires_in": expires_in,
+                        }
+                    )
         with self.assertRaises(Invalid):
-            TOKEN_RESPONSE_SCHEMA({
-                "access_token": "access",
-                "refresh_token": "refresh",
-                "expires_in": "3600",
-                "unknown": "value",
-            })
+            TOKEN_RESPONSE_SCHEMA(
+                {
+                    "access_token": "access",
+                    "refresh_token": "refresh",
+                    "expires_in": "3600",
+                    "unknown": "value",
+                }
+            )
 
     def test_checkout_schema_rejects_null_url_and_extra_fields(self) -> None:
         """Reject unusable redirect URLs and undocumented checkout fields."""
@@ -296,11 +300,13 @@ class HelloAssoAPITests(TestCase):
         rejected.raise_for_status.side_effect = requests.HTTPError(response=rejected)
         post.side_effect = [
             rejected,
-            self.response({
-                "access_token": "new-access-token",
-                "refresh_token": "new-refresh-token",
-                "expires_in": "3600",
-            }),
+            self.response(
+                {
+                    "access_token": "new-access-token",
+                    "refresh_token": "new-refresh-token",
+                    "expires_in": "3600",
+                }
+            ),
             self.response({"redirectUrl": "https://www.helloasso.com/checkout/new"}),
         ]
 

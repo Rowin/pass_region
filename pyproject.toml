@@ -7,8 +7,17 @@ requires-python = ">=3.13"
 dependencies = [
     "cryptography>=50.0.2",
     "django>=6.1.2",
-    "django-debug-toolbar>=8.0.0",
     "django-sesame>=3.2.5",
     "probatio>=0.13.0",
     "requests>=2.34.2",
 ]
+
+[dependency-groups]
+dev = [
+    "black>=26.10.1",
+    "isort>=9.0.2",
+    "pre-commit>=4.7.0",
+]
+
+[tool.isort]
+profile = "black"
