@@ -65,7 +65,7 @@ class CardPaymentCallbackTests(SimpleTestCase):
             payment_status=CardPayment.CardPaymentChoice.WAITING_PAYMENT,
         )
         self.pending_payments.update.assert_called_once_with(
-            payment_status=CardPayment.CardPaymentChoice.PAYMENT_SUCCESS
+            payment_status=CardPayment.CardPaymentChoice.WAITING_CONFIRMATION
         )
         self.payment.save.assert_not_called()
         self.assertEqual(len(notifications), 1)

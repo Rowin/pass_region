@@ -122,7 +122,7 @@ class CardPaymenRedirect(LoginRequiredMixin, RedirectView):
             hello_asso_api = main.hello_asso.HelloAssoAPI()
             checkout_intent_id, redirect_url = hello_asso_api.create_checkout_intent(
                 amount=payment_case.total_amount_required(),
-                message="Coucou",
+                message=payment_case.organization.copay_message,
             )
 
             card_payment = CardPayment(
@@ -185,7 +185,7 @@ class CardPaymentCallback(LoginRequiredMixin, RedirectView):
 
                 if callback_type == "return" and request.GET.get("code") == "succeeded":
                     updated = pending_payments.update(
-                        payment_status=CardPayment.CardPaymentChoice.PAYMENT_SUCCESS
+                        payment_status=CardPayment.CardPaymentChoice.WAITING_CONFIRMATION
                     )
                     if updated:
                         messages.info(
@@ -207,7 +207,7 @@ class CardPaymentCallback(LoginRequiredMixin, RedirectView):
 
 
 @decorators.method_decorator(csrf.csrf_exempt, "dispatch")
-class HelloAssoWebHhook(View):
+class HelloAssoWebhook(View):
     http_method_names = ["post"]
 
     def post(self, request: HttpRequest):

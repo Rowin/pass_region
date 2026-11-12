@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, Self
 
 from django.conf import settings
 from django.core import validators
@@ -9,12 +9,53 @@ from django.utils.translation import gettext_lazy as _l
 from main.fields import EncryptedCharField
 
 
+class Organization(models.Model):
+    class Meta:
+        verbose_name = _("Organisation")
+
+    organization_name = models.CharField(_("Nom de l'organisation"))
+
+    hello_asso_client_id = EncryptedCharField(
+        help_text=_("Client ID pour la connexion à l'API HelloAsso")
+    )
+    hello_asso_secret_id = EncryptedCharField(
+        help_text=_("Secret ID pour la connexion à l'API HelloAsso")
+    )
+    hello_asso_organization_slug = models.CharField(
+        help_text=_("Slug de l'organisation pour la connexion à l'API HelloAsso")
+    )
+
+    copay_amount_per_candidate = models.DecimalField(
+        _("Reste à charge par candidat (€)")
+    )
+    copay_message = models.CharField(
+        _("Message à faire apparaitre pour le paiement"),
+        help_text=_(
+            "Ce message sera transmis à HelloAsso et apparaîtra comme nom de campagne"
+        ),
+    )
+
+    def __str__(self) -> str:
+        return self.organization_name
+
+
+class StaffUser(models.Model):
+    class Meta:
+        verbose_name = _("Gestionnaire")
+
+    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    organization = models.ManyToManyField(
+        to=Organization, verbose_name=_("Organisation")
+    )
+
+
 class PaymentCase(models.Model):
     class Meta:
         verbose_name = _("Dossier de paiement")
         verbose_name_plural = _("Dossiers de paiement")
 
     user = models.OneToOneField(to=settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    organization = models.ForeignKey(to=Organization, on_delete=models.CASCADE)
     session_number = models.fields.CharField(
         _("Numéro de la session"), validators=[validators.RegexValidator(r"\d*")]
     )
@@ -25,13 +66,15 @@ class PaymentCase(models.Model):
     passregionpayment_set: models.QuerySet["PassRegionPayment"]
 
     def total_amount_required(self):
-        return self.total_payments_required * 30
+        return (
+            self.total_payments_required * self.organization.copay_amount_per_candidate
+        )
 
 
 class CardPayment(models.Model):
     class CardPaymentChoice(models.TextChoices):
         WAITING_PAYMENT = "WP", _("En attente de paiement")
-        PAYMENT_SUCCESS = "PS", _("Paiement réussi")
+        WAITING_CONFIRMATION = "WC", _("En attente de confirmation du paiement")
         PAYMENT_CONFIRMED = "PC", _("Paiement confirmé")
         PAYMENT_FAILED = "PF", _("Paiement échoué")
 
@@ -44,10 +87,16 @@ class CardPayment(models.Model):
     redirect_url = models.fields.URLField(max_length=500)
     redirect_url_expires_at = models.DateTimeField()
     payment_status = models.fields.CharField(
-        choices=CardPaymentChoice, default=CardPaymentChoice.WAITING_PAYMENT
+        _("Statut du paiement"),
+        choices=CardPaymentChoice,
+        default=CardPaymentChoice.WAITING_PAYMENT,
     )
-    payment_confirmation_received_at = models.DateTimeField(blank=True, null=True)
-    payment_case = models.ForeignKey(to=PaymentCase, on_delete=models.CASCADE)
+    payment_confirmation_received_at = models.DateTimeField(
+        _("Date de confirmation du paiement"), blank=True, null=True
+    )
+    payment_case = models.ForeignKey(
+        to=PaymentCase, on_delete=models.CASCADE, verbose_name=_("Dossier de paiement")
+    )
 
 
 class PassRegionPayment(models.Model):

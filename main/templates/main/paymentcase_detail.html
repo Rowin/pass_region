@@ -62,7 +62,44 @@
 
 <section>
     <h2>Paiement CB</h2>
-    <p>Le Pass Région ne prend en charge que 30 € par candidat. Le solde reste à votre charge. Vous pouvez régler le solde par carte bancaire en passant par Hello Asso</p>
+    <p>Le Pass Région prend en charge 30 € par candidat. Le reste à charge de {{ payment_case.organization.copay_amount_per_candidate }} € par candidat est à régler par carte bancaire via HelloAsso.</p>
+    <style>
+        .copay-summary {
+            max-width: 34rem;
+        }
+
+        .copay-equation {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: baseline;
+            justify-content: center;
+            gap: 0.5rem;
+            font-size: 1.15rem;
+            text-align: center;
+        }
+
+        .copay-total {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            margin: 0.75rem 0 0;
+            padding-top: 0.75rem;
+            font-size: 1.15rem;
+        }
+    </style>
+    <article class="copay-summary">
+        <header>Calcul du reste à charge</header>
+        <div class="copay-equation">
+            <span>{{ payment_case.organization.copay_amount_per_candidate }} € par candidat</span>
+            <span aria-hidden="true">&times;</span>
+            <span>{{ payment_case.total_payments_required }} candidat{{ payment_case.total_payments_required|pluralize }}</span>
+        </div>
+        <hr>
+        <p class="copay-total">
+            <span>Total à régler</span>
+            <strong>{{ payment_case.total_amount_required }} €</strong>
+        </p>
+    </article>
     <form action="{% url 'card-payment' %}" method="post">
         {% csrf_token %}
         {% include "main/hello_asso_button.html" with amount=payment_case.total_amount_required %}
