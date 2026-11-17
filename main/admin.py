@@ -1,18 +1,20 @@
+import urllib.parse
 import uuid
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
+from django.conf import settings
 from django.contrib import admin
 from django.contrib.auth import get_user_model
 from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
 from django.contrib.auth.models import User
 from django.db import transaction
 from django.db.models.query import QuerySet
-from django.forms import CharField, EmailField, ModelForm
 from django.http import HttpRequest
 from django.urls import reverse
 from django.utils.translation import gettext as _
 from sesame.utils import get_query_string
 
+from main.forms import OrganizationAdminForm, PaymentCaseAdminForm
 from main.models import (
     APICredentialRecord,
     CardPayment,
@@ -24,20 +26,21 @@ from main.models import (
 
 if TYPE_CHECKING:
     _PassRegionInline = admin.TabularInline[PassRegionPayment, PaymentCase]
+    _StaffUserInline = admin.StackedInline[StaffUser, User]
+
     _PaymentCaseAdmin = admin.ModelAdmin[PaymentCase]
     _CardPaymentAdmin = admin.ModelAdmin[CardPayment]
     _APICredentialRecordAdmin = admin.ModelAdmin[APICredentialRecord]
     _OrganizationAdmin = admin.ModelAdmin[Organization]
 
-    _PaymentCaseAdminForm = ModelForm[PaymentCase]
 else:
     _PassRegionInline = admin.TabularInline
+    _StaffUserInline = admin.StackedInline
+
     _PaymentCaseAdmin = admin.ModelAdmin
     _CardPaymentAdmin = admin.ModelAdmin
     _APICredentialRecordAdmin = admin.ModelAdmin
     _OrganizationAdmin = admin.ModelAdmin
-
-    _PaymentCaseAdminForm = ModelForm
 
 
 def get_user_orgs(user: User) -> QuerySet[Organization]:
@@ -74,6 +77,7 @@ class PassRegionInline(_PassRegionInline):
 
 @admin.register(PaymentCase)
 class PaymentCaseAdmin(_PaymentCaseAdmin):
+    form = PaymentCaseAdminForm
     inlines = [PassRegionInline]
     list_display = [
         "completed",
@@ -85,7 +89,7 @@ class PaymentCaseAdmin(_PaymentCaseAdmin):
     ]
 
     def get_queryset(self, request: HttpRequest) -> QuerySet[PaymentCase, PaymentCase]:
-        user_orgs = get_user_orgs(request.user)
+        user_orgs = get_user_orgs(cast(User, request.user))
         return PaymentCase.objects.filter(organization__in=user_orgs)
 
     @staticmethod
@@ -123,33 +127,6 @@ class PaymentCaseAdmin(_PaymentCaseAdmin):
             message=f"Hello {user.first_name} {user.last_name}, Here is your link: {link}",
         )
 
-    class PaymentCaseAdminForm(_PaymentCaseAdminForm):
-        first_name = CharField(label=_("Prénom"))
-        last_name = CharField(label=_("Nom"))
-        email = EmailField(label=_("Mail"))
-
-        class Meta:
-            model = PaymentCase
-            fields = [
-                "organization",
-                "first_name",
-                "last_name",
-                "email",
-                "session_number",
-                "completed",
-                "total_payments_required",
-            ]
-
-        def __init__(self, *args: Any, **kwargs: Any):
-            super().__init__(*args, **kwargs)
-
-            if self.instance.pk:
-                self.fields["first_name"].initial = self.instance.user.first_name
-                self.fields["last_name"].initial = self.instance.user.last_name
-                self.fields["email"].initial = self.instance.user.email
-
-    form = PaymentCaseAdminForm
-
 
 @admin.register(CardPayment)
 class CardPaymentAdmin(_CardPaymentAdmin):
@@ -166,7 +143,7 @@ class CardPaymentAdmin(_CardPaymentAdmin):
         return False
 
     def get_queryset(self, request: HttpRequest) -> QuerySet[CardPayment, CardPayment]:
-        user_orgs = get_user_orgs(request.user)
+        user_orgs = get_user_orgs(cast(User, request.user))
         return CardPayment.objects.filter(payment_case__organization__in=user_orgs)
 
 
@@ -181,11 +158,39 @@ class APICredentialRecordAdmin(_APICredentialRecordAdmin):
 
 @admin.register(Organization)
 class OrganizationAdmin(_OrganizationAdmin):
+    form = OrganizationAdminForm
+    readonly_fields = ["webhook_url"]
+
+    def get_queryset(self, request: HttpRequest) -> QuerySet[Organization]:
+        return (
+            super()
+            .get_queryset(request)
+            .filter(pk__in=get_user_orgs(cast(User, request.user)))
+        )
+
+    @admin.display(description=_("URL du webhook"))
+    def webhook_url(self, obj: Organization):
+        return urllib.parse.urljoin(
+            settings.HELLO_ASSO_CALLBACK_BASE_URL,
+            reverse("webhook", args=[obj.webhook_uuid]),
+        )
+
+    def save_model(
+        self, request: HttpRequest, obj: Organization, form: Any, change: bool
+    ) -> None:
+        if form.cleaned_data.get("new_client_id"):
+            obj.hello_asso_client_id = form.cleaned_data["new_client_id"]
+            obj.hello_asso_client_secret = form.cleaned_data["new_client_secret"]
+            super().save_model(request, obj, form, change)
+            APICredentialRecord.objects.filter(organization=obj).delete()
+        else:
+            super().save_model(request, obj, form, change)
+
     def has_add_permission(self, request: HttpRequest) -> bool:
         return request.user.is_superuser
 
 
-class StaffUserInline(admin.StackedInline):
+class StaffUserInline(_StaffUserInline):
     model = StaffUser
 
 

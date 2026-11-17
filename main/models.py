@@ -1,4 +1,5 @@
-from typing import Any, Self
+import uuid
+from typing import Any
 
 from django.conf import settings
 from django.core import validators
@@ -18,8 +19,8 @@ class Organization(models.Model):
     hello_asso_client_id = EncryptedCharField(
         help_text=_("Client ID pour la connexion à l'API HelloAsso")
     )
-    hello_asso_secret_id = EncryptedCharField(
-        help_text=_("Secret ID pour la connexion à l'API HelloAsso")
+    hello_asso_client_secret = EncryptedCharField(
+        help_text=_("Client secret pour la connexion à l'API HelloAsso")
     )
     hello_asso_organization_slug = models.CharField(
         help_text=_("Slug de l'organisation pour la connexion à l'API HelloAsso")
@@ -34,6 +35,8 @@ class Organization(models.Model):
             "Ce message sera transmis à HelloAsso et apparaîtra comme nom de campagne"
         ),
     )
+
+    webhook_uuid = models.UUIDField(default=uuid.uuid4(), unique=True)
 
     def __str__(self) -> str:
         return self.organization_name
@@ -143,3 +146,4 @@ class APICredentialRecord(models.Model):
     refresh_token = EncryptedCharField()
     access_token = EncryptedCharField()
     access_token_expires_at = models.DateTimeField()
+    organization = models.ForeignKey(to=Organization, on_delete=models.CASCADE)

@@ -20,9 +20,7 @@ urlpatterns: list[URLResolver | URLPattern] = [
         views.CardPaymentCallback.as_view(),
         name="card-payment-return",
     ),
-    path(
-        "hook/", views.HelloAssoWebhook.as_view(), name="webhook"
-    ),  # TODO: Secure webhook by using a unique uuid for each authorized webhook
+    path("hook/<uuid:org_uuid>", views.HelloAssoWebhook.as_view(), name="webhook"),
     path("login/auth/", LoginView.as_view(next_page="payment-case"), name="login"),
     path("logout/", LogoutView.as_view(), name="logout"),
 ]

@@ -8,3 +8,6 @@ wheels/
 
 # Virtual environments
 .venv
+mail/*.log
+db.sqlite3
+main/migrations

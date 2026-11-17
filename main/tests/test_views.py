@@ -1,3 +1,4 @@
+import uuid
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -6,7 +7,7 @@ from django.test import Client, RequestFactory, TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
-from main.models import CardPayment, PaymentCase
+from main.models import CardPayment, Organization, PaymentCase, StaffUser
 from main.views import CardPaymenRedirect
 
 
@@ -55,6 +56,15 @@ class CardPaymentRedirectTests(TestCase):
 
 class WebhookTests(TestCase):
     def setUp(self):
+        self.org = Organization.objects.create(
+            organization_name="APC TEST",
+            hello_asso_client_id="client_id",
+            hello_asso_client_secret="client_secret",
+            hello_asso_organization_slug="slug",
+            copay_amount_per_candidate="100",
+            copay_message="message",
+        )
+
         user = get_user_model().objects.create_user(
             username="username",
             first_name="Firstname",
@@ -64,7 +74,13 @@ class WebhookTests(TestCase):
             is_staff=False,
             is_superuser=False,
         )
-        payment_case = PaymentCase.objects.create(user=user, session_number=123456)
+
+        staff_user = StaffUser.objects.create(user=user)
+        staff_user.organization.add(self.org)
+
+        payment_case = PaymentCase.objects.create(
+            user=user, session_number=123456, organization=self.org
+        )
         self.card_payment = CardPayment.objects.create(
             checkout_intent_id=12345,
             redirect_url="example.com",
@@ -76,8 +92,8 @@ class WebhookTests(TestCase):
         self.client = Client()
 
     def test_successful_webhook(self):
-        self.client.post(
-            reverse("webhook"),
+        response = self.client.post(
+            reverse("webhook", args=[self.org.webhook_uuid]),
             content_type="application/json",
             data={
                 "data": {
@@ -92,3 +108,19 @@ class WebhookTests(TestCase):
             self.card_payment.payment_status,
             CardPayment.CardPaymentChoice.PAYMENT_CONFIRMED,
         )
+        self.assertEqual(response.status_code, 200)
+
+    def test_invalid_webhook(self):
+        response = self.client.post(
+            reverse("webhook", args=[uuid.uuid1()]),
+            content_type="application/json",
+            data={
+                "data": {
+                    "payments": [{"state": "Authorized"}],
+                    "checkoutIntentId": 12345,
+                },
+                "eventType": "Order",
+            },
+        )
+
+        self.assertEqual(response.status_code, 404)

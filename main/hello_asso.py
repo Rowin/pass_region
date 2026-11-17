@@ -14,7 +14,7 @@ from django.utils.translation import gettext as _
 from requests.adapters import HTTPAdapter
 from requests.models import PreparedRequest
 
-from main.models import APICredentialRecord
+from main.models import APICredentialRecord, Organization
 from main.schemas import CHECKOUT_INTENT_RESPONSE_SCHEMA, TOKEN_RESPONSE_SCHEMA
 
 logger = logging.getLogger(__name__)
@@ -44,13 +44,17 @@ class _RelaxedX509HTTPAdapter(HTTPAdapter):
 class HelloAssoAPI:
     """Minimal client for Hello Asso authentication and the Checkout API.
 
-    Credentials and the organization slug are read from Django settings.
-    Authentication tokens are stored in ``APICredentialRecord``.
+    Credentials and the organization slug come from the supplied Organization.
+    Authentication tokens are stored per organization in ``APICredentialRecord``.
     """
 
     AUTH_URL = "https://api.helloasso-sandbox.com/oauth2/token"
     API_URL = "https://api.helloasso-sandbox.com/v5"
     TOKEN_REFRESH_THRESHOLD = timedelta(minutes=2)
+
+    def __init__(self, organization: Organization) -> None:
+        """Bind API requests and stored tokens to the supplied organization."""
+        self.organization = organization
 
     def _request_json(
         self,
@@ -87,7 +91,6 @@ class HelloAssoAPI:
                 headers=headers,
                 timeout=30,
             )
-            print(data, headers, json_data)
         try:
             response.raise_for_status()
         except requests.HTTPError:
@@ -106,7 +109,6 @@ class HelloAssoAPI:
                 )
             raise
         decoded = response.json()
-        print(decoded)
 
         if not isinstance(decoded, dict):
             raise ValueError(_("Hello Asso a retourné une réponse JSON invalide."))
@@ -159,10 +161,16 @@ class HelloAssoAPI:
                 "refresh_token": credential.refresh_token,
             }
         else:
+            client_id = self.organization.hello_asso_client_id
+            client_secret = self.organization.hello_asso_client_secret
+            if not client_id or not client_secret:
+                raise ImproperlyConfigured(
+                    _("Les identifiants HelloAsso de l'organisation sont manquants.")
+                )
             data = {
                 "grant_type": "client_credentials",
-                "client_id": self._get_setting("HELLO_ASSO_CLIENT_ID"),
-                "client_secret": self._get_setting("HELLO_ASSO_CLIENT_SECRET"),
+                "client_id": client_id,
+                "client_secret": client_secret,
             }
 
         response = self._request_json(
@@ -190,9 +198,13 @@ class HelloAssoAPI:
             ValueError: If the response body is not a valid JSON object.
             probatio.Invalid: If the authentication response violates its schema.
         """
-        credential = APICredentialRecord.objects.order_by(
-            "-access_token_expires_at"
-        ).first()
+        credential = (
+            APICredentialRecord.objects.filter(
+                organization=self.organization,
+            )
+            .order_by("-access_token_expires_at")
+            .first()
+        )
         now = timezone.now()
         if (
             credential is not None
@@ -216,6 +228,7 @@ class HelloAssoAPI:
         expires_at = now + timedelta(seconds=expires_in)
         if credential is None:
             APICredentialRecord.objects.create(
+                organization=self.organization,
                 refresh_token=refresh_token,
                 access_token=access_token,
                 access_token_expires_at=expires_at,
@@ -270,7 +283,11 @@ class HelloAssoAPI:
         if not message or len(message) > 250:
             raise ValueError(_("Le message doit contenir entre 1 et 250 caractères."))
 
-        organization_slug = self._get_setting("HELLO_ASSO_ORGANIZATION_SLUG")
+        organization_slug = self.organization.hello_asso_organization_slug
+        if not organization_slug:
+            raise ImproperlyConfigured(
+                _("Le slug HelloAsso de l'organisation est manquant.")
+            )
         checkout_url = (
             f"{self.API_URL}/organizations/{organization_slug}/checkout-intents"
         )

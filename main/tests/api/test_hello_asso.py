@@ -15,18 +15,24 @@ from main.hello_asso import (
     HelloAssoAPI,
     _RelaxedX509HTTPAdapter,
 )
-from main.models import APICredentialRecord
+from main.models import APICredentialRecord, Organization
 
 
 @override_settings(
-    HELLO_ASSO_CLIENT_ID="test-client-id",
-    HELLO_ASSO_CLIENT_SECRET="test-client-secret",
-    HELLO_ASSO_ORGANIZATION_SLUG="test-organization",
+    HELLO_ASSO_CALLBACK_BASE_URL="https://example.com",
 )
 class HelloAssoAPITests(TestCase):
     def setUp(self) -> None:
         """Create a client for each test case."""
-        self.api = HelloAssoAPI()
+        self.organization = Organization.objects.create(
+            organization_name="Test organization",
+            hello_asso_client_id="test-client-id",
+            hello_asso_secret_id="test-client-secret",
+            hello_asso_organization_slug="test-organization",
+            copay_amount_per_candidate=Decimal("35.00"),
+            copay_message="Payment",
+        )
+        self.api = HelloAssoAPI(self.organization)
 
     def test_token_schema_rejects_invalid_expiration_and_extra_fields(self) -> None:
         """Require positive string seconds and reject undocumented token fields."""
@@ -74,13 +80,11 @@ class HelloAssoAPITests(TestCase):
         message: str,
     ) -> str:
         """Create a checkout using the shared redirect URLs for the tests."""
-        return self.api.create_checkout_intent(
+        _, redirect_url = self.api.create_checkout_intent(
             amount,
             message,
-            back_url="https://example.com/back",
-            error_url="https://example.com/error",
-            return_url="https://example.com/return",
         )
+        return redirect_url
 
     def test_adapter_relaxes_strict_chain_check_but_keeps_tls_verification(
         self,
@@ -179,9 +183,9 @@ class HelloAssoAPITests(TestCase):
                 "totalAmount": 1234,
                 "initialAmount": 1234,
                 "itemName": "Payment message",
-                "backUrl": "https://example.com/back",
-                "errorUrl": "https://example.com/error",
-                "returnUrl": "https://example.com/return",
+                "backUrl": self.api.get_callback_url("back"),
+                "errorUrl": self.api.get_callback_url("error"),
+                "returnUrl": self.api.get_callback_url("return"),
                 "containsDonation": False,
             },
         )
@@ -191,32 +195,31 @@ class HelloAssoAPITests(TestCase):
         )
         self.assertEqual(APICredentialRecord.objects.count(), 1)
         credential = APICredentialRecord.objects.get()
+        self.assertEqual(credential.organization, self.organization)
         self.assertEqual(credential.refresh_token, "new-refresh-token")
         self.assertEqual(credential.access_token, "new-access-token")
 
     @patch("main.hello_asso.requests.Session.post")
-    def test_checkout_can_enable_donations(self, post: Mock) -> None:
-        """Check that the optional donation flag is forwarded to Hello Asso."""
+    def test_checkout_uses_organization_slug(self, post: Mock) -> None:
+        """Build checkout requests from the organization rather than global settings."""
+        self.organization.hello_asso_organization_slug = "another-slug"
         APICredentialRecord.objects.create(
+            organization=self.organization,
             refresh_token="cached-refresh-token",
             access_token="cached-access-token",
             access_token_expires_at=timezone.now() + timedelta(minutes=10),
         )
         post.return_value = self.response(
-            {"redirectUrl": "https://www.helloasso.com/checkout/donation"}
+            {"id": 123, "redirectUrl": "https://www.helloasso.com/checkout/donation"}
         )
 
-        redirect_url = self.api.create_checkout_intent(
-            5,
-            "Donation",
-            back_url="https://example.com/back",
-            error_url="https://example.com/error",
-            return_url="https://example.com/return",
-            contains_donation=True,
-        )
+        redirect_url = self.create_checkout(5, "Donation")
 
         self.assertEqual(redirect_url, "https://www.helloasso.com/checkout/donation")
-        self.assertTrue(post.call_args.kwargs["json"]["containsDonation"])
+        self.assertEqual(
+            post.call_args.args[0],
+            f"{HelloAssoAPI.API_URL}/organizations/another-slug/checkout-intents",
+        )
 
     @patch("main.hello_asso.requests.Session.post")
     def test_valid_access_token_is_reused_without_authentication_request(
@@ -225,12 +228,13 @@ class HelloAssoAPITests(TestCase):
     ) -> None:
         """Check that a sufficiently long-lived access token is reused."""
         APICredentialRecord.objects.create(
+            organization=self.organization,
             refresh_token="cached-refresh-token",
             access_token="cached-access-token",
             access_token_expires_at=timezone.now() + timedelta(minutes=10),
         )
         post.return_value = self.response(
-            {"redirectUrl": "https://www.helloasso.com/checkout/cached"}
+            {"id": 123, "redirectUrl": "https://www.helloasso.com/checkout/cached"}
         )
 
         redirect_url = self.create_checkout(5, "Payment")
@@ -243,12 +247,57 @@ class HelloAssoAPITests(TestCase):
         )
 
     @patch("main.hello_asso.requests.Session.post")
+    def test_other_organizations_token_is_not_reused(self, post: Mock) -> None:
+        """A valid foreign token must not bypass this organization's authentication."""
+        other = Organization.objects.create(
+            organization_name="Other organization",
+            hello_asso_client_id="other-client",
+            hello_asso_secret_id="other-secret",
+            hello_asso_organization_slug="other-slug",
+            copay_amount_per_candidate=Decimal("35.00"),
+            copay_message="Other payment",
+        )
+        foreign = APICredentialRecord.objects.create(
+            organization=other,
+            refresh_token="foreign-refresh",
+            access_token="foreign-access",
+            access_token_expires_at=timezone.now() + timedelta(hours=1),
+        )
+        post.side_effect = [
+            self.response(
+                {
+                    "access_token": "own-access",
+                    "refresh_token": "own-refresh",
+                    "expires_in": "3600",
+                }
+            ),
+            self.response({"id": 123, "redirectUrl": "https://example.com/checkout"}),
+        ]
+
+        self.create_checkout(5, "Payment")
+
+        self.assertEqual(
+            post.call_args_list[0].kwargs["data"],
+            {
+                "grant_type": "client_credentials",
+                "client_id": "test-client-id",
+                "client_secret": "test-client-secret",
+            },
+        )
+        own = APICredentialRecord.objects.get(organization=self.organization)
+        self.assertEqual(own.access_token, "own-access")
+        foreign.refresh_from_db()
+        self.assertEqual(foreign.access_token, "foreign-access")
+        self.assertEqual(foreign.refresh_token, "foreign-refresh")
+
+    @patch("main.hello_asso.requests.Session.post")
     def test_expired_access_token_is_refreshed_and_credentials_are_updated(
         self,
         post: Mock,
     ) -> None:
         """Check form-encoded refresh and persistence of the rotated token pair."""
         credential = APICredentialRecord.objects.create(
+            organization=self.organization,
             refresh_token="old-refresh-token",
             access_token="expired-access-token",
             access_token_expires_at=timezone.now() - timedelta(seconds=1),
@@ -262,7 +311,10 @@ class HelloAssoAPITests(TestCase):
                 }
             ),
             self.response(
-                {"redirectUrl": "https://www.helloasso.com/checkout/refreshed"}
+                {
+                    "id": 123,
+                    "redirectUrl": "https://www.helloasso.com/checkout/refreshed",
+                }
             ),
         ]
 
@@ -290,6 +342,7 @@ class HelloAssoAPITests(TestCase):
     def test_refresh_http_error_falls_back_to_full_auth_once(self, post: Mock) -> None:
         """Recover from any refresh HTTP error and replace the stored token pair."""
         credential = APICredentialRecord.objects.create(
+            organization=self.organization,
             refresh_token="rejected-refresh-token",
             access_token="expired-access-token",
             access_token_expires_at=timezone.now() - timedelta(seconds=1),
@@ -307,7 +360,9 @@ class HelloAssoAPITests(TestCase):
                     "expires_in": "3600",
                 }
             ),
-            self.response({"redirectUrl": "https://www.helloasso.com/checkout/new"}),
+            self.response(
+                {"id": 123, "redirectUrl": "https://www.helloasso.com/checkout/new"}
+            ),
         ]
 
         self.create_checkout(5, "Payment")
@@ -337,6 +392,7 @@ class HelloAssoAPITests(TestCase):
     def test_full_auth_failure_after_refresh_is_not_retried(self, post: Mock) -> None:
         """Propagate the second HTTP error without changing stored credentials."""
         credential = APICredentialRecord.objects.create(
+            organization=self.organization,
             refresh_token="old-refresh-token",
             access_token="expired-access-token",
             access_token_expires_at=timezone.now() - timedelta(seconds=1),
@@ -361,6 +417,7 @@ class HelloAssoAPITests(TestCase):
     def test_refresh_network_error_does_not_trigger_full_auth(self, post: Mock) -> None:
         """A transport failure does not fall back to client credentials."""
         APICredentialRecord.objects.create(
+            organization=self.organization,
             refresh_token="old-refresh-token",
             access_token="expired-access-token",
             access_token_expires_at=timezone.now() - timedelta(seconds=1),
@@ -376,6 +433,7 @@ class HelloAssoAPITests(TestCase):
     def test_full_auth_fallback_requires_a_new_refresh_token(self, post: Mock) -> None:
         """Do not reuse the rejected refresh token after incomplete full auth."""
         credential = APICredentialRecord.objects.create(
+            organization=self.organization,
             refresh_token="old-refresh-token",
             access_token="expired-access-token",
             access_token_expires_at=timezone.now() - timedelta(seconds=1),
@@ -397,6 +455,7 @@ class HelloAssoAPITests(TestCase):
     def test_refresh_requires_a_new_refresh_token(self, post: Mock) -> None:
         """Reject incomplete refresh responses without modifying stored credentials."""
         credential = APICredentialRecord.objects.create(
+            organization=self.organization,
             refresh_token="old-refresh-token",
             access_token="expired-access-token",
             access_token_expires_at=timezone.now() - timedelta(seconds=1),
@@ -420,13 +479,14 @@ class HelloAssoAPITests(TestCase):
                 self.assertEqual(credential.refresh_token, "old-refresh-token")
                 self.assertEqual(credential.access_token, "expired-access-token")
 
-    @override_settings(HELLO_ASSO_CLIENT_ID="", HELLO_ASSO_CLIENT_SECRET="")
     @patch("main.hello_asso.requests.Session.post")
     def test_missing_client_credentials_raise_configuration_error(
         self,
         post: Mock,
     ) -> None:
         """Check missing client credentials fail before any HTTP request."""
+        self.organization.hello_asso_client_id = ""
+        self.organization.hello_asso_client_secret = ""
         with self.assertRaises(ImproperlyConfigured):
             self.create_checkout(5, "Payment")
 
@@ -455,6 +515,7 @@ class HelloAssoAPITests(TestCase):
     def test_missing_redirect_url_raises_validation_error(self, post: Mock) -> None:
         """Check a checkout response without a redirect URL is rejected."""
         APICredentialRecord.objects.create(
+            organization=self.organization,
             refresh_token="cached-refresh-token",
             access_token="cached-access-token",
             access_token_expires_at=timezone.now() + timedelta(minutes=10),
@@ -464,13 +525,13 @@ class HelloAssoAPITests(TestCase):
         with self.assertRaises(Invalid):
             self.create_checkout(1, "Payment")
 
-    @override_settings(HELLO_ASSO_ORGANIZATION_SLUG="")
     @patch("main.hello_asso.requests.Session.post")
     def test_missing_organization_slug_raises_configuration_error(
         self,
         post: Mock,
     ) -> None:
         """Check a missing organization slug fails before any HTTP request."""
+        self.organization.hello_asso_organization_slug = ""
         with self.assertRaises(ImproperlyConfigured):
             self.create_checkout(5, "Payment")
 

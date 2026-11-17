@@ -1,5 +1,6 @@
 import json
 import logging
+import uuid
 from typing import Any, cast
 
 from django.contrib import messages
@@ -7,7 +8,7 @@ from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.exceptions import PermissionDenied
 from django.db.models import QuerySet
 from django.db.models.base import Model as ModelBase
-from django.forms import BaseFormSet, formset_factory
+from django.forms import formset_factory
 from django.http import (
     HttpRequest,
     HttpResponse,
@@ -25,7 +26,7 @@ from probatio import Invalid
 import main.hello_asso
 import main.schemas
 from main.forms import PassRegionPaymentForm
-from main.models import CardPayment, PassRegionPayment, PaymentCase
+from main.models import CardPayment, Organization, PassRegionPayment, PaymentCase
 
 logger = logging.getLogger(__name__)
 
@@ -119,7 +120,7 @@ class CardPaymenRedirect(LoginRequiredMixin, RedirectView):
         )
 
         if card_payment is None:
-            hello_asso_api = main.hello_asso.HelloAssoAPI()
+            hello_asso_api = main.hello_asso.HelloAssoAPI(payment_case.organization)
             checkout_intent_id, redirect_url = hello_asso_api.create_checkout_intent(
                 amount=payment_case.total_amount_required(),
                 message=payment_case.organization.copay_message,
@@ -210,7 +211,9 @@ class CardPaymentCallback(LoginRequiredMixin, RedirectView):
 class HelloAssoWebhook(View):
     http_method_names = ["post"]
 
-    def post(self, request: HttpRequest):
+    def post(self, request: HttpRequest, org_uuid: uuid.UUID):
+        organization = get_object_or_404(Organization, webhook_uuid=org_uuid)
+
         try:
             data = main.schemas.WEBHOOK_REQUEST_SCHEMA(json.loads(request.body))
         except Invalid as err:
@@ -223,7 +226,8 @@ class HelloAssoWebhook(View):
             return HttpResponse()
 
         card_payment = CardPayment.objects.filter(
-            checkout_intent_id=data["data"]["checkoutIntentId"]
+            checkout_intent_id=data["data"]["checkoutIntentId"],
+            payment_case__organization=organization,
         )
 
         if data["data"]["payments"][0]["state"] == "Authorized":

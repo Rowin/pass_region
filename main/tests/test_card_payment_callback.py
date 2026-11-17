@@ -9,7 +9,7 @@ from django.test import RequestFactory, SimpleTestCase, override_settings
 from django.urls import resolve, reverse
 
 from main.hello_asso import HelloAssoAPI
-from main.models import CardPayment
+from main.models import CardPayment, Organization
 from main.views import CardPaymentCallback
 
 
@@ -185,7 +185,7 @@ class CardPaymentCallbackTests(SimpleTestCase):
     @override_settings(HELLO_ASSO_CALLBACK_BASE_URL="https://payments.example.com")
     def test_generated_callback_urls_use_path_types(self) -> None:
         """All three URLs supplied to Hello Asso resolve to the shared callback view."""
-        api = HelloAssoAPI()
+        api = HelloAssoAPI(Organization())
         for callback_type in ("back", "error", "return"):
             with self.subTest(callback_type=callback_type):
                 path = reverse(
