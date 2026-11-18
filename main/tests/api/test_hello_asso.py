@@ -13,9 +13,9 @@ from main.hello_asso import (
     CHECKOUT_INTENT_RESPONSE_SCHEMA,
     TOKEN_RESPONSE_SCHEMA,
     HelloAssoAPI,
-    _RelaxedX509HTTPAdapter,
 )
 from main.models import APICredentialRecord, Organization
+from main.utils import _RelaxedX509HTTPAdapter
 
 
 @override_settings(

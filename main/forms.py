@@ -6,6 +6,7 @@ from django.forms import (
     EmailField,
     ModelForm,
     PasswordInput,
+    TextInput,
     ValidationError,
 )
 from django.utils.translation import gettext as _
@@ -24,16 +25,19 @@ else:
 
 class PassRegionPaymentForm(_PassRegionPaymentFormBase):
     card_pin = CharField(
+        label=_("Code PIN (4 chiffres)"),
         min_length=4,
         max_length=4,
         validators=[RegexValidator(r"\d{4}")],
-        widget=PasswordInput(),
+        widget=PasswordInput(attrs={"inputmode": "numeric", "pattern": "[0-9]{4}"}),
     )
 
     class Meta:
         model = PassRegionPayment
         fields = ["holder_firstname", "holder_lastname", "card_number", "card_pin"]
-        widgets = {"card_pin": PasswordInput()}
+        widgets = {
+            "card_number": TextInput(attrs={"inputmode": "numeric"}),
+        }
 
 
 class PaymentCaseAdminForm(_PaymentCaseAdminForm):
@@ -83,6 +87,7 @@ class OrganizationAdminForm(_OrganizationAdminForm):
         exclude = ["hello_asso_client_id", "hello_asso_client_secret"]
         fields = [
             "organization_name",
+            "email",
             "new_client_id",
             "new_client_secret",
             "hello_asso_organization_slug",

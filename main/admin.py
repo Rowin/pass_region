@@ -14,6 +14,7 @@ from django.urls import reverse
 from django.utils.translation import gettext as _
 from sesame.utils import get_query_string
 
+from main import notifications
 from main.forms import OrganizationAdminForm, PaymentCaseAdminForm
 from main.models import (
     APICredentialRecord,
@@ -111,21 +112,16 @@ class PaymentCaseAdmin(_PaymentCaseAdmin):
                 is_superuser=False,
             )
 
-        transaction.on_commit(lambda: self.send_magic_link(obj.user, request))
+        transaction.on_commit(lambda: self.send_magic_link(obj, request))
 
         super().save_model(request, obj, form, change)
 
-    def send_magic_link(self, user: User, request: HttpRequest):
+    def send_magic_link(self, payment_case: PaymentCase, request: HttpRequest):
         link = reverse("login")
         link = request.build_absolute_uri(link)
-        link += get_query_string(user=user)
+        link += get_query_string(user=payment_case.user)
 
-        print(link)
-
-        user.email_user(
-            subject="sesame",
-            message=f"Hello {user.first_name} {user.last_name}, Here is your link: {link}",
-        )
+        notifications.send_payment_creation_notification(payment_case, link)
 
 
 @admin.register(CardPayment)

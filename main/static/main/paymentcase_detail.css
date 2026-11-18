@@ -1,0 +1,116 @@
+.payment-case .session-details,
+.payment-case .holder-fields,
+.payment-case .registered-payments {
+    display: grid;
+    gap: 1rem;
+}
+
+.payment-case .session-details,
+.payment-case .registered-payments {
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
+}
+
+.payment-case .session-details,
+.payment-case .registered-payments article,
+.payment-case fieldset {
+    margin-bottom: 0;
+}
+
+.payment-case dd {
+    margin-inline-start: 0;
+    overflow-wrap: anywhere;
+}
+
+.payment-case .registered-payments {
+    padding: 0;
+    overflow-wrap: anywhere;
+}
+
+.payment-case .registered-payments > li {
+    list-style: none;
+}
+
+.payment-case .session-details dt,
+.payment-case .registered-payments dt {
+    font-weight: bold;
+}
+
+.payment-case .helloasso-checkout {
+    border: 1px solid #4a8100;
+    padding: 1rem;
+}
+
+.helloasso-checkout h3{
+    color: #4a8100
+}
+
+.payment-case :is(a, button, input):focus-visible {
+    outline: 3px solid var(--pico-primary);
+    outline-offset: 3px;
+}
+
+@media (min-width: 40rem) {
+    .payment-case .holder-fields {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (min-width: 64rem) {
+    .payment-case .session-card,
+    .payment-case .holder-card,
+    .payment-case .registered-payments article {
+        padding: 1rem;
+    }
+
+    .payment-case .session-details {
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr) minmax(0, 2fr);
+    }
+
+    .payment-case .session-card {
+        padding-block: 0.5rem;
+    }
+
+    .payment-case .holder-card {
+        margin-bottom: 1rem;
+    }
+
+    .payment-case .holder-fields {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+
+    .payment-case .holder-fields > div {
+        display: flex;
+        flex-direction: column;
+    }
+
+    .payment-case .holder-fields input {
+        margin-bottom: 0;
+    }
+
+    .payment-case .holder-fields .errorlist {
+        order: 1;
+        margin-block: 0.5rem 0;
+    }
+
+    .payment-case .registered-payments {
+        grid-template-columns: 1fr;
+    }
+
+    .payment-case .registered-payments > li,
+    .payment-case .registered-payments article > p,
+    .payment-case .registered-payments dl {
+        margin: 0;
+    }
+
+    .payment-case .registered-payments article,
+    .payment-case .registered-payments dl {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 1rem;
+    }
+
+    .payment-case .registered-payments article {
+        grid-template-columns: minmax(0, 1fr) minmax(0, 3fr);
+        align-items: baseline;
+    }
+}

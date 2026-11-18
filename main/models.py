@@ -1,13 +1,21 @@
+import logging
 import uuid
+from datetime import date, datetime
 from typing import Any
 
+import requests
+from bs4 import BeautifulSoup
 from django.conf import settings
 from django.core import validators
 from django.db import models
 from django.utils.translation import gettext as _
 from django.utils.translation import gettext_lazy as _l
+from requests import RequestException
 
 from main.fields import EncryptedCharField
+from main.utils import _RelaxedX509HTTPAdapter
+
+logger = logging.getLogger(__name__)
 
 
 class Organization(models.Model):
@@ -37,6 +45,13 @@ class Organization(models.Model):
     )
 
     webhook_uuid = models.UUIDField(default=uuid.uuid4(), unique=True)
+
+    email = models.EmailField(
+        _("Mail de l'organisation"),
+        help_text=_(
+            "Utilisé comme expéditeur des mails à destination des clients et pour envoyer les mails à destination des gestionnaires"
+        ),
+    )
 
     def __str__(self) -> str:
         return self.organization_name
@@ -147,3 +162,66 @@ class APICredentialRecord(models.Model):
     access_token = EncryptedCharField()
     access_token_expires_at = models.DateTimeField()
     organization = models.ForeignKey(to=Organization, on_delete=models.CASCADE)
+
+
+class SessionManager(models.Manager["Session"]):
+    def get_or_fetch(self, session_number: str) -> "Session":
+        session, created = self.get_or_create(session_number=session_number)
+        if not created:
+            return session
+
+        try:
+            location, session_date = self._fetch_session_data(session_number)
+        except (RequestException, ValueError):
+            logger.warning(
+                "Unable to fetch details for session %s", session_number, exc_info=True
+            )
+            return session
+
+        session.location = location
+        session.date = session_date
+        session.save(update_fields=["location", "date"])
+        return session
+
+    def _fetch_session_data(self, session_number: str) -> tuple[str, date]:
+        with requests.Session() as session:
+            if settings.DEBUG:
+                session.mount("https://", _RelaxedX509HTTPAdapter())
+            response = session.get(
+                "https://formations.protection-civile.org/detail-formation/",
+                params={"id_session": session_number},
+                timeout=10,
+            )
+        response.raise_for_status()
+        soup = BeautifulSoup(response.content, "html.parser")
+        location = soup.select_one(
+            '.fnpc-training-session--practical-info [data-icon="locationalt"]'
+            " + span > h3 + span"
+        )
+        session_date = soup.select_one(
+            '.fnpc-training-session--practical-info [data-icon="calendar"]'
+            " + span > h3 + span"
+        )
+        if location is None or session_date is None:
+            raise ValueError("Session location or date is missing from the page")
+
+        location_text = location.get_text(" ", strip=True)
+        date_text = session_date.get_text(" ", strip=True)
+        if not location_text or not date_text:
+            raise ValueError("Session location or date is empty")
+
+        return location_text, datetime.strptime(date_text.split()[0], "%d/%m/%Y").date()
+
+
+class Session(models.Model):
+    objects = SessionManager()
+
+    session_number = models.fields.CharField(
+        _("Numéro de la session"),
+        validators=[validators.RegexValidator(r"\d*")],
+        unique=True,
+    )
+    location = models.fields.CharField(
+        _("Adresse de la session"), null=True, blank=True
+    )
+    date = models.fields.DateField(_("Date de la session"), null=True, blank=True)

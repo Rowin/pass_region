@@ -1,104 +1,148 @@
 {% extends 'main/base.html' %}
-{% block title %}{% endblock %}
+{% load static %}
+{% block title %}Confirmer mon inscription PSC — Pass Région{% endblock %}
+{% block extra_head %}
+<link rel="stylesheet" href="{% static 'main/paymentcase_detail.css' %}">
+{% endblock %}
 {% block content %}
-<h1>Bonjour {{ payment_case.user.first_name|capfirst }} {{ payment_case.user.last_name|upper }}</h1>
+<div class="payment-case">
+    <h1>Confirmer votre inscription PSC</h1>
+    <p>Bonjour {{ payment_case.user.first_name|capfirst }} {{ payment_case.user.last_name|upper }}.</p>
+    <p>Vous êtes pré-inscrit à une formation PSC. Le Pass Région ne couvre pas la totalité du prix de la formation. Pour confirmer votre inscription, deux étapes sont nécessaires :</p>
+    <ol>
+        <li><a href="#pass-region">Renseigner les informations Pass Région de chaque titulaire.</a></li>
+        <li><a href="#paiement-cb">Régler le reste à charge par carte bancaire.</a></li>
+    </ol>
 
-<p>Pour vous inscrire à la formation PSC, veuillez renseigner les informations des Pass Région à utiliser, ainsi que régler le solde par carte bancaire</p>
+    {% if messages %}
+    <div aria-label="Notifications">
+        {% for message in messages %}
+        <p role="status">{{ message }}</p>
+        {% endfor %}
+    </div>
+    {% endif %}
 
-<section>
-    <h2>Pass Région</h2>
-    <p>Pour chaque titulaire du Pass Région, nous avons besoin du numéro de la carte, ainsi que du code confidentiel à 4 chiffres</p>
-    <form action="{% url 'payment-case' %}" method="post">
-    <table>
-        <thead>
-            <th colspan="2">Titulaire</th>
-            <th>Numéro de carte</th>
-            <th>Code secret</th>
-            <th>Statut</th>
-            <th>Commentaire</th>
-        </thead>
-    {% for pass_region_payment in payment_case.passregionpayment_set.all %}
-        <tr>
-            <td>{{ pass_region_payment.holder_firstname }}</td>
-            <td>{{ pass_region_payment.holder_lastname }}</td>
-            <td>{{ pass_region_payment.card_number }}</td>
-            <td>****</td>
-            <td>{{ pass_region_payment.get_payment_status_display }}</td>
-            <td>{{ pass_region_payment.comment|default_if_none:'' }}</td>
-        </tr>
-    {% endfor %}
-    {% for form in formset %}
-        <tr style="vertical-align: top">
-            <td>
-                <input type="text" name="{{ form.holder_firstname.html_name }}" placeholder="{{ form.holder_firstname.label }}" value="{{ form.holder_firstname.value|default_if_none:'' }}">
-                <small>{{ form.holder_firstname.errors.as_text }}</small>
-            </td>
-            <td>
-                <input type="text" name="{{ form.holder_lastname.html_name }}" placeholder="{{ form.holder_lastname.label }}" value="{{ form.holder_lastname.value|default_if_none:'' }}">
-                <small>{{ form.holder_lastname.errors.as_text }}</small>
-            </td>
-            <td>
-                <input type="text" name="{{ form.card_number.html_name }}" placeholder="{{ form.card_number.label }}" value="{{ form.card_number.value|default_if_none:'' }}">
-                <small>{{ form.card_number.errors.as_text }}</small>
-            </td>
-            <td>
-                <input type="password" name="{{ form.card_pin.html_name }}" placeholder="{{ form.card_pin.label }}">
-                <small>{{ form.card_pin.errors.as_text }}</small>
-            </td>
-            <td></td>
-            <td><small>{{ form.non_field_errors.as_text }}</small></td>
-        </tr>
-    {% endfor %}
-    </table>
-    <small>{{ formset.management_form.errors }}</small>
-    <small>{{ formset.non_form_errors.as_text }}</small>
-    {{ formset.management_form}}
-    {% csrf_token %}
+    <section aria-labelledby="formation-title">
+        <h2 id="formation-title">Votre formation</h2>
+        <article class="session-card">
+            <dl class="session-details">
+                <div>
+                    <dt>Numéro de session</dt>
+                    <dd>{{ session.session_number }}</dd>
+                </div>
+                <div>
+                    <dt>Date</dt>
+                    <dd>{{ session.date|date:"l j F Y"|default:"Non communiquée" }}</dd>
+                </div>
+                <div>
+                    <dt>Lieu</dt>
+                    <dd>{{ session.location|default:"Non communiqué" }}</dd>
+                </div>
+            </dl>
+        </article>
+    </section>
 
-    <p><input type="submit" value="Enregistrer les données Pass Région"></p>
-    </form>
+    <section aria-labelledby="pass-region">
+        <h2 id="pass-region">1. Renseigner vos Pass Région</h2>
+        <p>Pour chaque titulaire, renseignez le prénom, le nom, le numéro de carte et le code confidentiel à 4 chiffres.</p>
+        <p>Le code confidentiel est stocké de manière sécurisée, puis supprimé une fois le paiement accepté ou rejeté.</p>
 
-</section>
+        {% with payments=payment_case.passregionpayment_set.all %}
+        {% if payments %}
+        <h3>Pass Région déjà enregistrés</h3>
+        <ul class="registered-payments">
+            {% for payment in payments %}
+            <li>
+                <article>
+                    <p><strong>{{ payment.holder_firstname|capfirst }} {{ payment.holder_lastname|upper }}</strong></p>
+                    <dl>
+                        <div>
+                            <dt>Numéro de carte</dt>
+                            <dd>{{ payment.card_number }}</dd>
+                        </div>
+                        <div>
+                            <dt>Statut</dt>
+                            <dd>{{ payment.get_payment_status_display }}</dd>
+                        </div>
+                        {% if payment.comment %}
+                        <div>
+                            <dt>Commentaire</dt>
+                            <dd>{{ payment.comment }}</dd>
+                        </div>
+                        {% endif %}
+                    </dl>
+                </article>
+            </li>
+            {% endfor %}
+        </ul>
+        {% endif %}
+        {% endwith %}
 
-<section>
-    <h2>Paiement CB</h2>
-    <p>Le Pass Région prend en charge 30 € par candidat. Le reste à charge de {{ payment_case.organization.copay_amount_per_candidate }} € par candidat est à régler par carte bancaire via HelloAsso.</p>
-    <style>
-        .copay-equation {
-            display: flex;
-            flex-wrap: wrap;
-            align-items: baseline;
-            justify-content: center;
-            gap: 0.5rem;
-            font-size: 1.15rem;
-            text-align: center;
-        }
+        {% if formset.forms %}
+        <h3>Pass Région à renseigner</h3>
+        {% endif %}
+        <form action="{% url 'payment-case' %}" method="post">
+            {% csrf_token %}
+            {{ formset.management_form }}
 
-        .copay-total {
-            display: flex;
-            justify-content: space-between;
-            align-items: baseline;
-            margin: 0.75rem 0 0;
-            padding-top: 0.75rem;
-            font-size: 1.15rem;
-        }
-    </style>
-    <article class="copay-summary">
-        <header>Calcul du reste à charge</header>
-        <div class="copay-equation">
-            <span>{{ payment_case.organization.copay_amount_per_candidate }} € par candidat</span>
-            <span aria-hidden="true">&times;</span>
-            <span>{{ payment_case.total_payments_required }} candidat{{ payment_case.total_payments_required|pluralize }}</span>
-        </div>
-        <hr>
-        <p class="copay-total">
-            <span>Total à régler</span>
-            <strong>{{ payment_case.total_amount_required }} €</strong>
-        </p>
-    </article>
-    <form action="{% url 'card-payment' %}" method="post">
-        {% csrf_token %}
-        {% include "main/hello_asso_button.html" with amount=payment_case.total_amount_required %}
-    </form>
-</section>
+            {% if formset.total_error_count %}
+            <div class="error-summary" role="alert">
+                <h3>Vos informations n'ont pas été enregistrées</h3>
+                <p>Corrigez les erreurs indiquées ci-dessous, puis enregistrez à nouveau.</p>
+                {{ formset.non_form_errors }}
+                {{ formset.management_form.errors }}
+                <ul>
+                    {% for form in formset %}
+                    {% with holder_number=forloop.counter %}
+                    {% for error in form.non_field_errors %}
+                    <li><a href="#{{ form.prefix }}">Titulaire {{ holder_number }} : {{ error }}</a></li>
+                    {% endfor %}
+                    {% for field in form %}
+                    {% for error in field.errors %}
+                    <li><a href="#{{ field.id_for_label }}">Titulaire {{ holder_number }} — {{ field.label }} : {{ error }}</a></li>
+                    {% endfor %}
+                    {% endfor %}
+                    {% endwith %}
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+
+            {% for form in formset %}
+            <article class="holder-card">
+                <fieldset id="{{ form.prefix }}" aria-describedby="{{ form.prefix }}-instructions">
+                    <legend>Titulaire {{ forloop.counter }}</legend>
+                    <p id="{{ form.prefix }}-instructions">Renseignez tous les champs pour ajouter ce Pass Région.</p>
+                    {{ form.non_field_errors }}
+                    <div class="holder-fields">
+                        {% for field in form %}
+                        <div>{{ field.as_field_group }}</div>
+                        {% endfor %}
+                    </div>
+                </fieldset>
+            </article>
+            {% endfor %}
+
+            {% if formset.forms %}
+            <button type="submit">Enregistrer les informations Pass Région</button>
+            {% else %}
+            <p>Les Pass Région attendus sont enregistrés. Vous pouvez consulter leur statut ci-dessus.</p>
+            {% endif %}
+        </form>
+    </section>
+
+    <section aria-labelledby="paiement-cb">
+        <h2 id="paiement-cb">2. Régler le reste à charge</h2>
+        <p>Le Pass Région prend en charge 30 € par candidat. Le reste à charge est à régler par carte bancaire via HelloAsso.</p>
+        <form class="helloasso-checkout" action="{% url 'card-payment' %}" method="post" aria-labelledby="helloasso-title" aria-describedby="helloasso-help helloasso-contribution">
+            <h3 id="helloasso-title">Paiement avec HelloAsso</h3>
+            <p>{{ payment_case.organization.copay_amount_per_candidate }} € par candidat pour {{ payment_case.total_payments_required }} candidat{{ payment_case.total_payments_required|pluralize }}.</p>
+            <p>Total à régler : <strong>{{ payment_case.total_amount_required }} €</strong></p>
+            <p id="helloasso-help">Le bouton ci-dessous vous redirige vers HelloAsso pour effectuer votre paiement.</p>
+            <p id="helloasso-contribution">Le modèle solidaire de HelloAsso garantit que 100% de votre paiement nous sera versé. Vous pouvez soutenir l'aide qu'ils apportent aux associations en laissant une contribution volontaire à HelloAsso au moment de votre paiement.</p>
+            {% csrf_token %}
+            {% include "main/hello_asso_button.html" with amount=payment_case.total_amount_required %}
+        </form>
+    </section>
+</div>
 {% endblock %}

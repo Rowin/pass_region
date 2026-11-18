@@ -1,0 +1,5 @@
+{% extends "main/mail/base.html" %}
+{% block body %}
+<p>Vous avez demandé à utiliser le dispositif Pass Région pour vous inscrire à la formation PSC du {{ session.date }}. Le dispositif ne prend en charge qu'une partie des frais d'inscription, vous devrez régler le reste à charge.</p>
+<p>Pour renseigner les informations du Pass Région à utiliser et payer le reste à charge, vous pouvez suivre <a href="{{ link }}">ce lien</a> pour vous rendre sur notre plateforme de paiement</p>
+{% endblock body %}

@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="fr">
 
 <head>
     <meta charset="UTF-8">
@@ -7,12 +7,31 @@
     <title>{% block title %}{% endblock %}</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@yohns/picocss@2.2.10/css/pico.classless.min.css">
     {% load static %}
+    {% block extra_head %}{% endblock %}
+    <style>
+        :root:not([data-theme]),
+        :root[data-theme] {
+            --pico-primary: #004080;
+            --pico-primary-underline: rgba(00, 64, 128, 0.5);
+            --pico-primary-hover: #001050;
+            --pico-primary-background: var(--pico-primary);
+            --pico-primary-border: var(--pico-primary);
+            --pico-primary-hover-background: var(--pico-primary-hover);
+            --pico-primary-hover-border: var(--pico-primary-hover);
+            --pico-h1-color: #F08700;
+            --pico-h2-color: #F08700;
+            --pico-h3-color: var(--pico-primary);
+        }
+    </style>
 </head>
 
 <body>
     <header>
         <nav>
-            <ul><img style="height: 2lh;" src="{% static 'main/img/fnpc.png' %}" alt=""></ul>
+            <ul>
+                <li><img style="height: 2lh;" src="{% static 'main/img/pass-region.png' %}" alt="logotype du pass région jeunes"></li>
+                <li><img style="height: 2lh;" src="{% static 'main/img/apc-38.png' %}" alt="logotype de la fédération nationale de protection civile"></li>
+            </ul>
             <ul>
                 <li><button form="logout" type="submit">Déconnexion</button></li>
             </ul>

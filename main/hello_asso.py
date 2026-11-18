@@ -1,5 +1,4 @@
 import logging
-import ssl
 import urllib.parse
 from decimal import Decimal
 from typing import Any, cast
@@ -11,34 +10,12 @@ from django.urls import reverse
 from django.utils import timezone
 from django.utils.timezone import timedelta
 from django.utils.translation import gettext as _
-from requests.adapters import HTTPAdapter
-from requests.models import PreparedRequest
 
 from main.models import APICredentialRecord, Organization
 from main.schemas import CHECKOUT_INTENT_RESPONSE_SCHEMA, TOKEN_RESPONSE_SCHEMA
+from main.utils import _RelaxedX509HTTPAdapter
 
 logger = logging.getLogger(__name__)
-
-
-class _RelaxedX509HTTPAdapter(HTTPAdapter):
-    """Keep TLS verification while relaxing strict X.509 chain checks."""
-
-    def __init__(self) -> None:
-        self._ssl_context = ssl.create_default_context()
-        self._ssl_context.verify_flags &= ~ssl.VERIFY_X509_STRICT
-        super().__init__()
-
-    def build_connection_pool_key_attributes(
-        self,
-        request: PreparedRequest,
-        verify: bool | str,
-        cert: str | tuple[str, str] | None = None,
-    ) -> tuple[dict[str, Any], dict[str, Any]]:
-        host_params, pool_kwargs = super().build_connection_pool_key_attributes(
-            request, verify, cert
-        )
-        pool_kwargs["ssl_context"] = self._ssl_context
-        return host_params, pool_kwargs
 
 
 class HelloAssoAPI:

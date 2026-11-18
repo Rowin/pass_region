@@ -26,7 +26,13 @@ from probatio import Invalid
 import main.hello_asso
 import main.schemas
 from main.forms import PassRegionPaymentForm
-from main.models import CardPayment, Organization, PassRegionPayment, PaymentCase
+from main.models import (
+    CardPayment,
+    Organization,
+    PassRegionPayment,
+    PaymentCase,
+    Session,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -63,9 +69,13 @@ class PaymentCaseDetail(DetailView):
 
     def get_context_data(self, **kwargs: Any) -> dict[str, Any]:
         context = super().get_context_data(**kwargs)
+        object: PaymentCase = cast(PaymentCase, self.object)
 
         if "formset" not in context:
             context["formset"] = self.get_formset()
+
+        session: Session = Session.objects.get_or_fetch(object.session_number)
+        context["session"] = session
 
         return context
 
