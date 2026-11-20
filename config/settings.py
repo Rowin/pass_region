@@ -13,20 +13,10 @@ https://docs.djangoproject.com/en/6.1/ref/settings/
 import os
 from pathlib import Path
 
+from django.core.exceptions import ImproperlyConfigured
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
-
-
-# Quick-start development settings - unsuitable for production
-# See https://docs.djangoproject.com/en/6.1/howto/deployment/checklist/
-
-# SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = "django-insecure-o1&nn=57)(r@9=8p=-y@3*=!z-6%k)9m!!+b!_2s&1@1q-1oa%"
-
-# SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
-
-ALLOWED_HOSTS = []
 
 
 # Application definition
@@ -43,6 +33,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -122,33 +113,85 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/6.1/howto/static-files/
 
 STATIC_URL = "static/"
+STATIC_ROOT = BASE_DIR / "staticfiles"
+
+
+INTERNAL_IPS = [
+    "127.0.0.1",
+]
+
+
+# Environment settings
+
+
+def env_list(name):
+    return [
+        value.strip() for value in os.environ.get(name, "").split(",") if value.strip()
+    ]
+
+
+DJANGO_ENV = os.environ.get("DJANGO_ENV")
+if DJANGO_ENV not in {"development", "production"}:
+    raise ImproperlyConfigured("Set DJANGO_ENV to development or production.")
+
+DEBUG = DJANGO_ENV == "development"
+SECRET_KEY = (
+    os.environ.get("DJANGO_SECRET_KEY", "django-insecure-local-dev-only")
+    if DEBUG
+    else os.environ["DJANGO_SECRET_KEY"]
+)
+allowed_hosts = os.environ.get("DJANGO_ALLOWED_HOSTS", "")
+ALLOWED_HOSTS = allowed_hosts.split(",") if allowed_hosts else []
+
+CSRF_TRUSTED_ORIGINS = env_list("DJANGO_CSRF_TRUSTED_ORIGINS")
+CSRF_COOKIE_SECURE = not DEBUG
+SESSION_COOKIE_SECURE = not DEBUG
 
 
 # Email
 # https://docs.djangoproject.com/en/6.1/topics/email/#topic-email-configuration
 
-MAILERS = {
-    "default": {
-        "BACKEND": "django.core.mail.backends.filebased.EmailBackend",
-        "OPTIONS": {"file_path": "mail/"},
-    },
-}
+if DEBUG and "DJANGO_EMAIL_HOST" not in os.environ:
+    MAILERS = {
+        "default": {
+            "BACKEND": "django.core.mail.backends.filebased.EmailBackend",
+            "OPTIONS": {"file_path": BASE_DIR / "mail"},
+        },
+    }
+else:
+    smtp_use_tls = bool(os.environ.get("DJANGO_EMAIL_USE_TLS", "1"))
+    smtp_use_ssl = bool(os.environ.get("DJANGO_EMAIL_USE_SSL"))
+    if smtp_use_tls and smtp_use_ssl:
+        raise ImproperlyConfigured("Enable either SMTP TLS or SSL, not both.")
 
-CARD_PIN_FERNET_KEYS = "12345678910111213141516171819"
+    MAILERS = {
+        "default": {
+            "BACKEND": "django.core.mail.backends.smtp.EmailBackend",
+            "OPTIONS": {
+                "host": os.environ["DJANGO_EMAIL_HOST"],
+                "port": int(
+                    os.environ.get(
+                        "DJANGO_EMAIL_PORT",
+                        465 if smtp_use_ssl else 587 if smtp_use_tls else 25,
+                    )
+                ),
+                "username": os.environ.get("DJANGO_EMAIL_HOST_USER", ""),
+                "password": os.environ.get("DJANGO_EMAIL_HOST_PASSWORD", ""),
+                "use_tls": smtp_use_tls,
+                "use_ssl": smtp_use_ssl,
+                "timeout": 10,
+            },
+        },
+    }
+    DEFAULT_FROM_EMAIL = os.environ["DJANGO_DEFAULT_FROM_EMAIL"]
 
-# HELLO_ASSO_CLIENT_ID = os.environ.get(
-#     "HELLO_ASSO_CLIENT_ID", "05eddf2a3a40405b84f1b1af002c0efd"
-# )
-# HELLO_ASSO_CLIENT_SECRET = os.environ.get(
-#     "HELLO_ASSO_CLIENT_SECRET", "eT3aBWj3XTCGFhSqWweTKCtcfm6tDa1+"
-# )
-# HELLO_ASSO_ORGANIZATION_SLUG = os.environ.get(
-#     "HELLO_ASSO_ORGANIZATION_SLUG", "association-de-protection-civile-38"
-# )
-HELLO_ASSO_CALLBACK_BASE_URL = os.environ.get(
-    "HELLO_ASSO_CALLBACK_BASE_URL", "http://localhost"
+CARD_PIN_FERNET_KEYS = (
+    os.environ.get("CARD_PIN_FERNET_KEYS", "12345678910111213141516171819")
+    if DEBUG
+    else os.environ["CARD_PIN_FERNET_KEYS"]
 )
-
-INTERNAL_IPS = [
-    "127.0.0.1",
-]
+HELLO_ASSO_CALLBACK_BASE_URL = (
+    os.environ.get("HELLO_ASSO_CALLBACK_BASE_URL", "http://localhost:8000")
+    if DEBUG
+    else os.environ["HELLO_ASSO_CALLBACK_BASE_URL"]
+)
