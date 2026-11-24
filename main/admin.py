@@ -22,26 +22,31 @@ from main.models import (
     Organization,
     PassRegionPayment,
     PaymentCase,
+    Session,
     StaffUser,
 )
 
 if TYPE_CHECKING:
     _PassRegionInline = admin.TabularInline[PassRegionPayment, PaymentCase]
     _StaffUserInline = admin.StackedInline[StaffUser, User]
+    _CardPaymentInline = admin.StackedInline[CardPayment, PaymentCase]
 
     _PaymentCaseAdmin = admin.ModelAdmin[PaymentCase]
     _CardPaymentAdmin = admin.ModelAdmin[CardPayment]
     _APICredentialRecordAdmin = admin.ModelAdmin[APICredentialRecord]
     _OrganizationAdmin = admin.ModelAdmin[Organization]
+    _SessionAdmin = admin.ModelAdmin[Session]
 
 else:
     _PassRegionInline = admin.TabularInline
     _StaffUserInline = admin.StackedInline
+    _CardPaymentInline = admin.StackedInline
 
     _PaymentCaseAdmin = admin.ModelAdmin
     _CardPaymentAdmin = admin.ModelAdmin
     _APICredentialRecordAdmin = admin.ModelAdmin
     _OrganizationAdmin = admin.ModelAdmin
+    _SessionAdmin = admin.ModelAdmin
 
 
 def get_user_orgs(user: User) -> QuerySet[Organization]:
@@ -76,10 +81,25 @@ class PassRegionInline(_PassRegionInline):
     max_num = 0
 
 
+class CardPaymentInline(_CardPaymentInline):
+    model = CardPayment
+    fields = [
+        "checkout_intent_id",
+        "payment_status",
+        "payment_confirmation_received_at",
+    ]
+    readonly_fields = [
+        "checkout_intent_id",
+        "payment_status",
+        "payment_confirmation_received_at",
+    ]
+    max_num = 0
+
+
 @admin.register(PaymentCase)
 class PaymentCaseAdmin(_PaymentCaseAdmin):
     form = PaymentCaseAdminForm
-    inlines = [PassRegionInline]
+    inlines = [PassRegionInline, CardPaymentInline]
     list_display = [
         "completed",
         "session_number",
@@ -112,7 +132,7 @@ class PaymentCaseAdmin(_PaymentCaseAdmin):
                 is_superuser=False,
             )
 
-        transaction.on_commit(lambda: self.send_magic_link(obj, request))
+            transaction.on_commit(lambda: self.send_magic_link(obj, request))
 
         super().save_model(request, obj, form, change)
 
@@ -126,7 +146,14 @@ class PaymentCaseAdmin(_PaymentCaseAdmin):
 
 @admin.register(CardPayment)
 class CardPaymentAdmin(_CardPaymentAdmin):
-    fields = ["payment_status", "payment_confirmation_received_at"]
+    fields = [
+        "payment_case",
+        "checkout_intent_id",
+        "redirect_url_expires_at",
+        "redirect_url",
+        "payment_status",
+        "payment_confirmation_received_at",
+    ]
     list_display = [
         "payment_case__session_number",
         "payment_case__user__first_name",
@@ -136,7 +163,7 @@ class CardPaymentAdmin(_CardPaymentAdmin):
     list_filter = ["payment_case__session_number", "payment_status"]
 
     def has_add_permission(self, request: HttpRequest) -> bool:
-        return False
+        return request.user.is_superuser
 
     def get_queryset(self, request: HttpRequest) -> QuerySet[CardPayment, CardPayment]:
         user_orgs = get_user_orgs(cast(User, request.user))
@@ -167,7 +194,7 @@ class OrganizationAdmin(_OrganizationAdmin):
     @admin.display(description=_("URL du webhook"))
     def webhook_url(self, obj: Organization):
         return urllib.parse.urljoin(
-            settings.HELLO_ASSO_CALLBACK_BASE_URL,
+            settings.BASE_URL,
             reverse("webhook", args=[obj.webhook_uuid]),
         )
 
@@ -196,3 +223,8 @@ admin.site.unregister(User)
 @admin.register(User)
 class UserAdmin(DjangoUserAdmin):
     inlines = [StaffUserInline]
+
+
+@admin.register(Session)
+class SessionAdmin(_SessionAdmin):
+    list_display = ["session_number", "date", "location"]

@@ -1,7 +1,7 @@
 import logging
 import uuid
 from datetime import date, datetime
-from typing import Any
+from typing import Any, ClassVar
 
 import requests
 from bs4 import BeautifulSoup
@@ -13,7 +13,7 @@ from django.utils.translation import gettext_lazy as _l
 from requests import RequestException
 
 from main.fields import EncryptedCharField
-from main.utils import _RelaxedX509HTTPAdapter
+from main.utils import _RelaxedX509HTTPAdapter, get_absolute_url
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +44,7 @@ class Organization(models.Model):
         ),
     )
 
-    webhook_uuid = models.UUIDField(default=uuid.uuid4(), unique=True)
+    webhook_uuid = models.UUIDField(default=uuid.uuid4, unique=True)
 
     email = models.EmailField(
         _("Mail de l'organisation"),
@@ -101,7 +101,9 @@ class CardPayment(models.Model):
         verbose_name_plural = _("Paiements CB")
         indexes = [models.Index(fields=["checkout_intent_id"])]
 
-    checkout_intent_id = models.fields.CharField(unique=True)
+    checkout_intent_id = models.fields.CharField(
+        unique=True, help_text=_("Identifiant technique du paiement chez HelloAsso")
+    )
     redirect_url = models.fields.URLField(max_length=500)
     redirect_url_expires_at = models.DateTimeField()
     payment_status = models.fields.CharField(
@@ -153,6 +155,11 @@ class PassRegionPayment(models.Model):
             self.PassRegionPaymentChoice.PAYMENT_REJECTED,
         ):
             self.card_pin = None
+
+        if self._state.adding:
+            from main.notifications import send_pass_region_registration_notification
+
+            send_pass_region_registration_notification(self.payment_case)
 
         super().save(*args, **kwargs)
 
@@ -214,7 +221,9 @@ class SessionManager(models.Manager["Session"]):
 
 
 class Session(models.Model):
-    objects = SessionManager()
+    objects: ClassVar[
+        SessionManager
+    ] = SessionManager()  # pyright: ignore[reportIncompatibleVariableOverride]
 
     session_number = models.fields.CharField(
         _("Numéro de la session"),

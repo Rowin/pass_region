@@ -18,7 +18,9 @@ COPY config/ config/
 COPY main/ main/
 
 RUN DJANGO_ENV=development python manage.py collectstatic --noinput \
-    && chown 10001:10001 /app
+    && mkdir /data \
+    && ln -s /data/db.sqlite3 /app/db.sqlite3 \
+    && chown 10001:10001 /app /data
 
 USER 10001:10001
 EXPOSE 8000

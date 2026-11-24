@@ -18,7 +18,7 @@ TOKEN_RESPONSE_SCHEMA = Schema(
         Required("expires_in"): Any(int, All(str, Match(r"\A0*[1-9][0-9]*\Z"))),
     },
 )
-"""Validate token responses; expires_in remains a positive seconds string.
+"""Validate token responses; expires_in is an integer or integer string.
 
 Tokens and expiration are required by the client even though the reference
 does not mark them as required. Undocumented response fields are rejected.

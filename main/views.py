@@ -25,6 +25,7 @@ from probatio import Invalid
 
 import main.hello_asso
 import main.schemas
+from main import notifications
 from main.forms import PassRegionPaymentForm
 from main.models import (
     CardPayment,
@@ -235,15 +236,19 @@ class HelloAssoWebhook(View):
             logger.warning("Failed to decode webhook data: %s", err)
             return HttpResponse()
 
-        card_payment = CardPayment.objects.filter(
-            checkout_intent_id=data["data"]["checkoutIntentId"],
-            payment_case__organization=organization,
-        )
-
         if data["data"]["payments"][0]["state"] == "Authorized":
-            card_payment.update(
+            card_payments = CardPayment.objects.filter(
+                checkout_intent_id=data["data"]["checkoutIntentId"],
+                payment_case__organization=organization,
+            )
+            card_payments.update(
                 payment_status=CardPayment.CardPaymentChoice.PAYMENT_CONFIRMED,
                 payment_confirmation_received_at=timezone.now(),
+            )
+            card_payment = card_payments.first()
+
+            notifications.send_credit_card_payment_confirmation_notification(
+                card_payment.payment_case
             )
 
         return HttpResponse()

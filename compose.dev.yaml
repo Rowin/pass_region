@@ -11,21 +11,29 @@ services:
       - python manage.py migrate --noinput && exec gunicorn --reload --bind 0.0.0.0:8000 config.wsgi:application
     environment:
       DJANGO_ENV: development
+      SSL_CERT_FILE: /etc/host-ca-bundle.crt
+      REQUESTS_CA_BUNDLE: /etc/host-ca-bundle.crt
       DJANGO_EMAIL_HOST: mailpit
       DJANGO_EMAIL_PORT: "1025"
       DJANGO_EMAIL_USE_TLS: ""
       DJANGO_DEFAULT_FROM_EMAIL: app@example.test
-      HELLO_ASSO_CALLBACK_BASE_URL: "http://localhost:${DEV_WEB_PORT:-8000}"
+      BASE_URL: "http://localhost:${DEV_WEB_PORT:-8000}"
     ports:
       - "127.0.0.1:${DEV_WEB_PORT:-8000}:8000"
     volumes:
+      - database:/data
+      - ${DEV_CA_BUNDLE:-/etc/ssl/certs/ca-certificates.crt}:/etc/host-ca-bundle.crt:ro
       - ./manage.py:/app/manage.py:ro,Z
       - ./config:/app/config:ro,Z
       - ./main:/app/main:ro,Z
     depends_on:
       - mailpit
+    restart: always
 
   mailpit:
     image: docker.io/axllent/mailpit:latest
     ports:
       - "127.0.0.1:8025:8025"
+
+volumes:
+  database:

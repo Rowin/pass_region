@@ -291,7 +291,7 @@ class HelloAssoAPI:
 
     def get_callback_url(self, type: str) -> str:
         """Build the public callback URL with its return type in the path."""
-        base_url = self._get_setting("HELLO_ASSO_CALLBACK_BASE_URL")
+        base_url = self._get_setting("BASE_URL")
         callback_url = urllib.parse.urljoin(
             base_url,
             reverse("card-payment-return", kwargs={"callback_type": type}),

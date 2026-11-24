@@ -13,6 +13,10 @@ En mode `DEBUG` uniquement, HelloAsso et la recuperation des sessions utilisent
 l'adaptateur TLS partage de `main.utils`. Il relache le controle X.509 strict
 sans desactiver la verification des certificats ni du nom d'hote.
 
+Le conteneur de developpement utilise les autorites de certification de l'hote.
+Par defaut, il monte `/etc/ssl/certs/ca-certificates.crt` en lecture seule ;
+definir `DEV_CA_BUNDLE` pour utiliser un autre fichier de certificats PEM.
+
 Si la recuperation echoue avec une erreur HTTP, reseau ou de contenu, l'echec est
 journalise et la session est tout de meme renvoyee et conservee en base,
 sans adresse ni date. Les appels suivants reutilisent cette session sans

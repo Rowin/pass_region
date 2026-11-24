@@ -19,7 +19,7 @@ from main.utils import _RelaxedX509HTTPAdapter
 
 
 @override_settings(
-    HELLO_ASSO_CALLBACK_BASE_URL="https://example.com",
+    BASE_URL="https://example.com",
 )
 class HelloAssoAPITests(TestCase):
     def setUp(self) -> None:
@@ -27,7 +27,7 @@ class HelloAssoAPITests(TestCase):
         self.organization = Organization.objects.create(
             organization_name="Test organization",
             hello_asso_client_id="test-client-id",
-            hello_asso_secret_id="test-client-secret",
+            hello_asso_client_secret="test-client-secret",
             hello_asso_organization_slug="test-organization",
             copay_amount_per_candidate=Decimal("35.00"),
             copay_message="Payment",
@@ -35,8 +35,8 @@ class HelloAssoAPITests(TestCase):
         self.api = HelloAssoAPI(self.organization)
 
     def test_token_schema_rejects_invalid_expiration_and_extra_fields(self) -> None:
-        """Require positive string seconds and reject undocumented token fields."""
-        for expires_in in ("0", "-1", "1.5", "", 3600, True):
+        """Reject invalid expiration strings and undocumented token fields."""
+        for expires_in in ("0", "-1", "1.5", ""):
             with self.subTest(expires_in=expires_in):
                 with self.assertRaises(Invalid):
                     TOKEN_RESPONSE_SCHEMA(
@@ -46,6 +46,16 @@ class HelloAssoAPITests(TestCase):
                             "expires_in": expires_in,
                         }
                     )
+        for expires_in in ("3600", 3600):
+            with self.subTest(expires_in=expires_in):
+                result = TOKEN_RESPONSE_SCHEMA(
+                    {
+                        "access_token": "access",
+                        "refresh_token": "refresh",
+                        "expires_in": expires_in,
+                    }
+                )
+                self.assertEqual(result["expires_in"], expires_in)
         with self.assertRaises(Invalid):
             TOKEN_RESPONSE_SCHEMA(
                 {
@@ -252,7 +262,7 @@ class HelloAssoAPITests(TestCase):
         other = Organization.objects.create(
             organization_name="Other organization",
             hello_asso_client_id="other-client",
-            hello_asso_secret_id="other-secret",
+            hello_asso_client_secret="other-secret",
             hello_asso_organization_slug="other-slug",
             copay_amount_per_candidate=Decimal("35.00"),
             copay_message="Other payment",

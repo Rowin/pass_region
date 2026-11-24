@@ -21,6 +21,7 @@ class CardPaymentCallbackTests(SimpleTestCase):
         self.factory = RequestFactory()
         self.user = Mock(is_authenticated=True)
         self.payment = Mock()
+        self.payment.pk = 42
         self.lookup = self.enterContext(
             patch("main.views.get_object_or_404", return_value=self.payment)
         )
@@ -60,8 +61,7 @@ class CardPaymentCallbackTests(SimpleTestCase):
             CardPayment, checkout_intent_id="123", payment_case__user=self.user
         )
         self.manager.assert_called_once_with(
-            checkout_intent_id="123",
-            payment_case__user=self.user,
+            pk=self.payment.pk,
             payment_status=CardPayment.CardPaymentChoice.WAITING_PAYMENT,
         )
         self.pending_payments.update.assert_called_once_with(
@@ -82,8 +82,7 @@ class CardPaymentCallbackTests(SimpleTestCase):
         self.assertEqual(notifications, [])
         self.payment.save.assert_not_called()
         self.manager.assert_called_once_with(
-            checkout_intent_id="123",
-            payment_case__user=self.user,
+            pk=self.payment.pk,
             payment_status=CardPayment.CardPaymentChoice.WAITING_PAYMENT,
         )
 
@@ -101,8 +100,7 @@ class CardPaymentCallbackTests(SimpleTestCase):
         response, notifications = self.callback("error", "checkoutIntentId=123")
         self.assertEqual(response.status_code, 302)
         self.manager.assert_called_once_with(
-            checkout_intent_id="123",
-            payment_case__user=self.user,
+            pk=self.payment.pk,
             payment_status=CardPayment.CardPaymentChoice.WAITING_PAYMENT,
         )
         self.pending_payments.update.assert_called_once_with(
@@ -119,8 +117,7 @@ class CardPaymentCallbackTests(SimpleTestCase):
         self.assertEqual(response.status_code, 302)
         self.assertEqual(notifications, [])
         self.manager.assert_called_once_with(
-            checkout_intent_id="123",
-            payment_case__user=self.user,
+            pk=self.payment.pk,
             payment_status=CardPayment.CardPaymentChoice.WAITING_PAYMENT,
         )
         self.payment.save.assert_not_called()
@@ -182,7 +179,7 @@ class CardPaymentCallbackTests(SimpleTestCase):
         self.assertEqual(notifications, [])
         self.manager.assert_not_called()
 
-    @override_settings(HELLO_ASSO_CALLBACK_BASE_URL="https://payments.example.com")
+    @override_settings(BASE_URL="https://payments.example.com")
     def test_generated_callback_urls_use_path_types(self) -> None:
         """All three URLs supplied to Hello Asso resolve to the shared callback view."""
         api = HelloAssoAPI(Organization())

@@ -3,15 +3,17 @@ from typing import Any
 from django.conf import settings
 from django.core.mail import EmailMultiAlternatives
 from django.template.loader import render_to_string
+from django.urls import reverse
 
 from main.models import Organization, PaymentCase, Session
+from main.utils import get_absolute_url
 
 
 def send_payment_creation_notification(payment_case: PaymentCase, link: str):
     """Send a notification to the customer with their authentication link after registration"""
     org: Organization = payment_case.organization
     session: Session = Session.objects.get_or_fetch(payment_case.session_number)
-    context: dict[str, Any] = {"link": link, "session": Session}
+    context: dict[str, Any] = {"link": link, "session": session}
 
     send_notification(
         subject="[Protection Civile] Inscription avec le Pass Région",
@@ -24,17 +26,45 @@ def send_payment_creation_notification(payment_case: PaymentCase, link: str):
 
 
 def send_payment_case_confirmation_notification():
-    """Send a notification to the customer when the complete payment is confirmed"""
+    """Send a notification to the customer when the payment case is completed"""
 
 
-def send_pass_region_registration_notification():
+def send_pass_region_registration_notification(payment_case: PaymentCase):
     """Send a notification to the managers when a customer registered a new Pass Region credentials"""
-    ...
+    org: Organization = payment_case.organization
+    context: dict[str, Any] = {
+        "url": get_absolute_url(
+            reverse("admin:main_paymentcase_change", args=(payment_case.pk,))
+        )
+    }
+
+    send_notification(
+        subject="[Protection Civile] Enregistrement d'un Pass Région",
+        from_email=org.email,
+        to=org.email,
+        text_template="main/mail/pass_region_registration.html",
+        html_template="main/mail/pass_region_registration.html",
+        context=context,
+    )
 
 
-def send_credit_card_payment_confirmation_notification():
+def send_credit_card_payment_confirmation_notification(payment_case: PaymentCase):
     """Send a notification to the managers when we received payment confirmation for a credit card payment"""
-    ...
+    org: Organization = payment_case.organization
+    context: dict[str, Any] = {
+        "url": get_absolute_url(
+            reverse("admin:main_paymentcase_change", args=(payment_case.pk,))
+        )
+    }
+
+    send_notification(
+        subject="[Protection Civile] Confirmation d'un paiement par carte de crédit",
+        from_email=org.email,
+        to=org.email,
+        text_template="main/mail/credit_card_confirmation.html",
+        html_template="main/mail/credit_card_confirmation.html",
+        context=context,
+    )
 
 
 def send_notification(

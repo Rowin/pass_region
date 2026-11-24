@@ -190,8 +190,8 @@ CARD_PIN_FERNET_KEYS = (
     if DEBUG
     else os.environ["CARD_PIN_FERNET_KEYS"]
 )
-HELLO_ASSO_CALLBACK_BASE_URL = (
-    os.environ.get("HELLO_ASSO_CALLBACK_BASE_URL", "http://localhost:8000")
+BASE_URL = (
+    os.environ.get("BASE_URL", "http://localhost:8000")
     if DEBUG
-    else os.environ["HELLO_ASSO_CALLBACK_BASE_URL"]
+    else os.environ["BASE_URL"]
 )

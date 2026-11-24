@@ -5,6 +5,7 @@ from typing import Any
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+from django.conf import settings
 from requests.adapters import HTTPAdapter
 from requests.models import PreparedRequest
 
@@ -36,3 +37,7 @@ def fernet_from_seed(seed: str) -> Fernet:
     ).derive(seed.encode("utf-8"))
 
     return Fernet(urlsafe_b64encode(key_bytes))
+
+
+def get_absolute_url(path: str) -> str:
+    return settings.BASE_URL + path

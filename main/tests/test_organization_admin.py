@@ -15,10 +15,11 @@ class OrganizationAdminTests(TestCase):
         self.organization = Organization.objects.create(
             organization_name="Test organization",
             hello_asso_client_id="stored-client-marker",
-            hello_asso_secret_id="stored-secret-marker",
+            hello_asso_client_secret="stored-secret-marker",
             hello_asso_organization_slug="test-organization",
             copay_amount_per_candidate="10.00",
             copay_message="Payment",
+            email="organization@example.test",
         )
         self.user = get_user_model().objects.create_superuser(
             username="organization-admin", password="test-password"
@@ -32,6 +33,7 @@ class OrganizationAdminTests(TestCase):
             "hello_asso_organization_slug": "test-organization",
             "copay_amount_per_candidate": "10.00",
             "copay_message": "Payment",
+            "email": "organization@example.test",
         }
 
     def test_existing_credentials_are_absent_from_admin_html(self):
@@ -43,7 +45,7 @@ class OrganizationAdminTests(TestCase):
             "hello_asso_client_id", response.context["adminform"].form.fields
         )
         self.assertNotIn(
-            "hello_asso_secret_id", response.context["adminform"].form.fields
+            "hello_asso_client_secret", response.context["adminform"].form.fields
         )
 
     def test_blank_replacements_preserve_credentials(self):

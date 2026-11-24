@@ -1,4 +1,5 @@
 import uuid
+from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -14,9 +15,9 @@ from main.views import CardPaymenRedirect
 class CardPaymentRedirectTests(TestCase):
     @override_settings(
         ALLOWED_HOSTS=["127.0.0.1"],
-        HELLO_ASSO_CALLBACK_BASE_URL="https://payments.example.com",
+        BASE_URL="https://payments.example.com",
     )
-    def test_checkout_callbacks_use_configured_public_base_url(self) -> None:
+    def test_checkout_uses_payment_case_amount_and_message(self) -> None:
         request = RequestFactory().get(
             "/me/card-payment",
             HTTP_HOST="127.0.0.1:8000",
@@ -24,7 +25,10 @@ class CardPaymentRedirectTests(TestCase):
         request.user = SimpleNamespace(is_authenticated=True)
         view = CardPaymenRedirect()
         view.setup(request)
-        payment_case = PaymentCase()
+        organization = Organization(
+            copay_amount_per_candidate=Decimal("35.00"), copay_message="Coucou"
+        )
+        payment_case = PaymentCase(pk=1, organization=organization)
 
         with (
             patch(
@@ -32,25 +36,21 @@ class CardPaymentRedirectTests(TestCase):
                 return_value=payment_case,
             ),
             patch(
-                "main.views.CardPayment.objects.get",
-                side_effect=CardPayment.DoesNotExist,
-            ),
+                "main.views.CardPayment.objects.filter",
+            ) as payments,
             patch("main.views.CardPayment.save"),
             patch(
                 "main.views.main.hello_asso.HelloAssoAPI.create_checkout_intent",
-                return_value="https://checkout.example.com/session",
+                return_value=(123, "https://checkout.example.com/session"),
             ) as create_checkout,
         ):
+            payments.return_value.order_by.return_value.first.return_value = None
             result = view.get_redirect_url()
 
-        callback_url = "https://payments.example.com/me/payments/"
         self.assertEqual(result, "https://checkout.example.com/session")
         create_checkout.assert_called_once_with(
-            amount=35,
+            amount=Decimal("35.00"),
             message="Coucou",
-            return_url=callback_url,
-            error_url=callback_url,
-            back_url=callback_url,
         )
 
 
@@ -91,7 +91,11 @@ class WebhookTests(TestCase):
 
         self.client = Client()
 
-    def test_successful_webhook(self):
+    @patch(
+        "main.views.notifications.send_credit_card_payment_confirmation_notification"
+    )
+    @patch.object(CardPayment, "save")
+    def test_successful_webhook(self, save, notify):
         response = self.client.post(
             reverse("webhook", args=[self.org.webhook_uuid]),
             content_type="application/json",
@@ -108,6 +112,9 @@ class WebhookTests(TestCase):
             self.card_payment.payment_status,
             CardPayment.CardPaymentChoice.PAYMENT_CONFIRMED,
         )
+        self.assertIsNotNone(self.card_payment.payment_confirmation_received_at)
+        save.assert_not_called()
+        notify.assert_called_once_with(self.card_payment.payment_case)
         self.assertEqual(response.status_code, 200)
 
     def test_invalid_webhook(self):
