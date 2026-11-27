@@ -1,3 +1,7 @@
+# Documentation
+
+Consultez le [guide des gestionnaires](docs/guide-gestionnaires.md) pour le suivi des dossiers Pass Région et des paiements.
+
 # Sessions
 
 `Session.objects.get_or_fetch("00123")` renvoie la session existante ou la

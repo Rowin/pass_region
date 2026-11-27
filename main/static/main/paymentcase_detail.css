@@ -1,37 +1,57 @@
-.payment-case .session-details,
-.payment-case .holder-fields,
-.payment-case .registered-payments {
+.payment-case :is(.holder-fields, .registered-payments) {
     display: grid;
     gap: 1rem;
 }
 
-.payment-case .session-details,
-.payment-case .registered-payments {
-    grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
+.payment-case .details-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem 0.5rem;
 }
 
-.payment-case .session-details,
-.payment-case .registered-payments article,
-.payment-case fieldset {
+.payment-case .details-grid > div {
+    flex: 1 0 auto;
+    width: max-content;
+    max-width: 100%;
+}
+
+.payment-case .registered-payments {
+    grid-template-columns: 1fr;
+}
+
+.payment-case .registered-payments :is(li, article, .details-grid) {
+    display: grid;
+    grid-column: 1 / -1;
+    grid-template-columns: subgrid;
+}
+
+.payment-case .registered-payments .details-grid > div {
+    width: auto;
+    min-width: 0;
+}
+
+.payment-case .registered-payments .details-grid > div:nth-child(4) {
+    grid-column: 1 / -1;
+}
+
+.payment-case :is(.details-grid, .registered-payments article, fieldset) {
     margin-bottom: 0;
 }
 
-.payment-case dd {
+.payment-case .details-grid dd {
     margin-inline-start: 0;
-    overflow-wrap: anywhere;
+    overflow-wrap: break-word;
 }
 
 .payment-case .registered-payments {
     padding: 0;
-    overflow-wrap: anywhere;
 }
 
 .payment-case .registered-payments > li {
     list-style: none;
 }
 
-.payment-case .session-details dt,
-.payment-case .registered-payments dt {
+.payment-case .details-grid dt {
     font-weight: bold;
 }
 
@@ -40,8 +60,8 @@
     padding: 1rem;
 }
 
-.helloasso-checkout h3{
-    color: #4a8100
+.payment-case .helloasso-checkout h3 {
+    color: #4a8100;
 }
 
 .payment-case :is(a, button, input):focus-visible {
@@ -53,17 +73,20 @@
     .payment-case .holder-fields {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
+
+    .payment-case .registered-payments {
+        grid-template-columns: repeat(3, minmax(0, auto));
+        column-gap: 0.5rem;
+    }
+
+    .payment-case .card-payments {
+        grid-template-columns: repeat(2, minmax(0, auto));
+    }
 }
 
 @media (min-width: 64rem) {
-    .payment-case .session-card,
-    .payment-case .holder-card,
-    .payment-case .registered-payments article {
+    .payment-case :is(.session-card, .holder-card, .registered-payments article) {
         padding: 1rem;
-    }
-
-    .payment-case .session-details {
-        grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr) minmax(0, 2fr);
     }
 
     .payment-case .session-card {
@@ -92,25 +115,8 @@
         margin-block: 0.5rem 0;
     }
 
-    .payment-case .registered-payments {
-        grid-template-columns: 1fr;
-    }
-
     .payment-case .registered-payments > li,
-    .payment-case .registered-payments article > p,
-    .payment-case .registered-payments dl {
+    .payment-case .registered-payments article > p {
         margin: 0;
-    }
-
-    .payment-case .registered-payments article,
-    .payment-case .registered-payments dl {
-        display: grid;
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-        gap: 1rem;
-    }
-
-    .payment-case .registered-payments article {
-        grid-template-columns: minmax(0, 1fr) minmax(0, 3fr);
-        align-items: baseline;
     }
 }

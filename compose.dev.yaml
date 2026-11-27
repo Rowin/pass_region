@@ -17,7 +17,7 @@ services:
       DJANGO_EMAIL_PORT: "1025"
       DJANGO_EMAIL_USE_TLS: ""
       DJANGO_DEFAULT_FROM_EMAIL: app@example.test
-      BASE_URL: "http://localhost:${DEV_WEB_PORT:-8000}"
+      BASE_URL: "https://webhook.site/8b41c012-de01-4ee1-9998-54e3cd2b5611"
     ports:
       - "127.0.0.1:${DEV_WEB_PORT:-8000}:8000"
     volumes:
@@ -25,7 +25,7 @@ services:
       - ${DEV_CA_BUNDLE:-/etc/ssl/certs/ca-certificates.crt}:/etc/host-ca-bundle.crt:ro
       - ./manage.py:/app/manage.py:ro,Z
       - ./config:/app/config:ro,Z
-      - ./main:/app/main:ro,Z
+      - ./main:/app/main:Z
     depends_on:
       - mailpit
     restart: always

@@ -25,7 +25,7 @@
     <section aria-labelledby="formation-title">
         <h2 id="formation-title">Votre formation</h2>
         <article class="session-card">
-            <dl class="session-details">
+            <dl class="details-grid">
                 <div>
                     <dt>Numéro de session</dt>
                     <dd>{{ session.session_number }}</dd>
@@ -54,8 +54,11 @@
             {% for payment in payments %}
             <li>
                 <article>
-                    <p><strong>{{ payment.holder_firstname|capfirst }} {{ payment.holder_lastname|upper }}</strong></p>
-                    <dl>
+                    <dl class="details-grid">
+                        <div>
+                            <dt>Titulaire</dt>
+                            <dd>{{ payment.holder_firstname|capfirst }} {{ payment.holder_lastname|upper }}</dd>
+                        </div>
                         <div>
                             <dt>Numéro de carte</dt>
                             <dd>{{ payment.card_number }}</dd>
@@ -134,15 +137,38 @@
     <section aria-labelledby="paiement-cb">
         <h2 id="paiement-cb">2. Régler le reste à charge</h2>
         <p>Le Pass Région prend en charge 30 € par candidat. Le reste à charge est à régler par carte bancaire via HelloAsso.</p>
-        <form class="helloasso-checkout" action="{% url 'card-payment' %}" method="post" aria-labelledby="helloasso-title" aria-describedby="helloasso-help helloasso-contribution">
-            <h3 id="helloasso-title">Paiement avec HelloAsso</h3>
-            <p>{{ payment_case.organization.copay_amount_per_candidate }} € par candidat pour {{ payment_case.total_payments_required }} candidat{{ payment_case.total_payments_required|pluralize }}.</p>
-            <p>Total à régler : <strong>{{ payment_case.total_amount_required }} €</strong></p>
-            <p id="helloasso-help">Le bouton ci-dessous vous redirige vers HelloAsso pour effectuer votre paiement.</p>
-            <p id="helloasso-contribution">Le modèle solidaire de HelloAsso garantit que 100% de votre paiement nous sera versé. Vous pouvez soutenir l'aide qu'ils apportent aux associations en laissant une contribution volontaire à HelloAsso au moment de votre paiement.</p>
-            {% csrf_token %}
-            {% include "main/hello_asso_button.html" with amount=payment_case.total_amount_required %}
-        </form>
+
+            <ul class="registered-payments card-payments">
+            {% for card_payment in card_payments %}
+            <li>
+                <article>
+                    <dl class="details-grid">
+                        <div>
+                            <dt>Date de paiement</dt>
+                            <dd>{{ card_payment.payment_created_at }}</dd>
+                        </div>
+                        <div>
+                            <dt>Numéro de carte</dt>
+                            <dd>{{ card_payment.get_payment_status_display  }}</dd>
+                        </div>
+                    </dl>
+                </article>
+            </li>
+            {% endfor %}
+        </ul>
+
+        {% if is_payment_form %}
+            <form class="helloasso-checkout" action="{% url 'card-payment' %}" method="post" aria-labelledby="helloasso-title" aria-describedby="helloasso-help helloasso-contribution">
+                <h3 id="helloasso-title">Paiement avec HelloAsso</h3>
+                <p>{{ payment_case.organization.copay_amount_per_candidate }} € par candidat pour {{ payment_case.total_payments_required }} candidat{{ payment_case.total_payments_required|pluralize }}.</p>
+                <p>Total à régler : <strong>{{ payment_case.total_amount_required }} €</strong></p>
+                <p id="helloasso-help">Le bouton ci-dessous vous redirige vers HelloAsso pour effectuer votre paiement.</p>
+                <p id="helloasso-contribution">Le modèle solidaire de HelloAsso garantit que 100% de votre paiement nous sera versé. Vous pouvez soutenir l'aide qu'ils apportent aux associations en laissant une contribution volontaire à HelloAsso au moment de votre paiement.</p>
+                {% csrf_token %}
+                {% include "main/hello_asso_button.html" with amount=payment_case.total_amount_required %}
+            </form>
+        {% endif %}
+
     </section>
 </div>
 {% endblock %}

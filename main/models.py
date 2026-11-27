@@ -8,6 +8,7 @@ from bs4 import BeautifulSoup
 from django.conf import settings
 from django.core import validators
 from django.db import models
+from django.utils import timezone
 from django.utils.translation import gettext as _
 from django.utils.translation import gettext_lazy as _l
 from requests import RequestException
@@ -82,6 +83,7 @@ class PaymentCase(models.Model):
     )
     completed = models.fields.BooleanField(_("Paiement complet"), default=False)
     passregionpayment_set: models.QuerySet["PassRegionPayment"]
+    cardpayment_set: models.QuerySet["CardPayment"]
 
     def total_amount_required(self):
         return (
@@ -101,6 +103,9 @@ class CardPayment(models.Model):
         verbose_name_plural = _("Paiements CB")
         indexes = [models.Index(fields=["checkout_intent_id"])]
 
+    payment_created_at = models.DateTimeField(
+        _("Date de création"), default=timezone.now()
+    )
     checkout_intent_id = models.fields.CharField(
         unique=True, help_text=_("Identifiant technique du paiement chez HelloAsso")
     )

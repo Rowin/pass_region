@@ -6,7 +6,7 @@ from typing import Any, cast
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.exceptions import PermissionDenied
-from django.db.models import QuerySet
+from django.db.models import Q, QuerySet
 from django.db.models.base import Model as ModelBase
 from django.forms import formset_factory
 from django.http import (
@@ -74,6 +74,17 @@ class PaymentCaseDetail(DetailView):
 
         if "formset" not in context:
             context["formset"] = self.get_formset()
+
+        is_payment_form: bool = not object.cardpayment_set.filter(
+            Q(payment_status=CardPayment.CardPaymentChoice.PAYMENT_CONFIRMED)
+            | Q(payment_status=CardPayment.CardPaymentChoice.WAITING_CONFIRMATION)
+        ).exists()
+        context["is_payment_form"] = is_payment_form
+
+        card_payments: QuerySet[CardPayment] = object.cardpayment_set.exclude(
+            payment_status=CardPayment.CardPaymentChoice.WAITING_PAYMENT
+        )
+        context["card_payments"] = card_payments
 
         session: Session = Session.objects.get_or_fetch(object.session_number)
         context["session"] = session

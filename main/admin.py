@@ -2,6 +2,7 @@ import urllib.parse
 import uuid
 from typing import TYPE_CHECKING, Any, cast
 
+import unfold.admin
 from django.conf import settings
 from django.contrib import admin
 from django.contrib.auth import get_user_model
@@ -31,22 +32,22 @@ if TYPE_CHECKING:
     _StaffUserInline = admin.StackedInline[StaffUser, User]
     _CardPaymentInline = admin.StackedInline[CardPayment, PaymentCase]
 
-    _PaymentCaseAdmin = admin.ModelAdmin[PaymentCase]
-    _CardPaymentAdmin = admin.ModelAdmin[CardPayment]
-    _APICredentialRecordAdmin = admin.ModelAdmin[APICredentialRecord]
-    _OrganizationAdmin = admin.ModelAdmin[Organization]
-    _SessionAdmin = admin.ModelAdmin[Session]
+    _PaymentCaseAdmin = unfold.admin.ModelAdmin[PaymentCase]
+    _CardPaymentAdmin = unfold.admin.ModelAdmin[CardPayment]
+    _APICredentialRecordAdmin = unfold.admin.ModelAdmin[APICredentialRecord]
+    _OrganizationAdmin = unfold.admin.ModelAdmin[Organization]
+    _SessionAdmin = unfold.admin.ModelAdmin[Session]
 
 else:
     _PassRegionInline = admin.TabularInline
     _StaffUserInline = admin.StackedInline
     _CardPaymentInline = admin.StackedInline
 
-    _PaymentCaseAdmin = admin.ModelAdmin
-    _CardPaymentAdmin = admin.ModelAdmin
-    _APICredentialRecordAdmin = admin.ModelAdmin
-    _OrganizationAdmin = admin.ModelAdmin
-    _SessionAdmin = admin.ModelAdmin
+    _PaymentCaseAdmin = unfold.admin.ModelAdmin
+    _CardPaymentAdmin = unfold.admin.ModelAdmin
+    _APICredentialRecordAdmin = unfold.admin.ModelAdmin
+    _OrganizationAdmin = unfold.admin.ModelAdmin
+    _SessionAdmin = unfold.admin.ModelAdmin
 
 
 def get_user_orgs(user: User) -> QuerySet[Organization]:
@@ -80,10 +81,21 @@ class PassRegionInline(_PassRegionInline):
     ]
     max_num = 0
 
+    def has_change_permission(
+        self, request: HttpRequest, obj: PaymentCase | None = None
+    ) -> bool:
+        return True
+
+    def has_delete_permission(
+        self, request: HttpRequest, obj: PaymentCase | None = None
+    ) -> bool:
+        return True
+
 
 class CardPaymentInline(_CardPaymentInline):
     model = CardPayment
     fields = [
+        "payment_created_at",
         "checkout_intent_id",
         "payment_status",
         "payment_confirmation_received_at",
@@ -95,11 +107,22 @@ class CardPaymentInline(_CardPaymentInline):
     ]
     max_num = 0
 
+    def has_view_permission(
+        self, request: HttpRequest, obj: PaymentCase | None = None
+    ) -> bool:
+        return True
+
 
 @admin.register(PaymentCase)
 class PaymentCaseAdmin(_PaymentCaseAdmin):
     form = PaymentCaseAdminForm
     inlines = [PassRegionInline, CardPaymentInline]
+    search_fields = [
+        "session_number",
+        "user__first_name",
+        "user__last_name",
+        "user__email",
+    ]
     list_display = [
         "completed",
         "session_number",
@@ -108,15 +131,35 @@ class PaymentCaseAdmin(_PaymentCaseAdmin):
         "user__email",
         "pass_region_count",
     ]
+    list_filter = ["session_number", "completed"]
 
     def get_queryset(self, request: HttpRequest) -> QuerySet[PaymentCase, PaymentCase]:
         user_orgs = get_user_orgs(cast(User, request.user))
         return PaymentCase.objects.filter(organization__in=user_orgs)
 
+    def has_module_permission(self, request: HttpRequest) -> bool:
+        return True
+
+    def has_add_permission(self, request: HttpRequest) -> bool:
+        return True
+
+    def has_change_permission(
+        self, request: HttpRequest, obj: Any | None = None
+    ) -> bool:
+        return True
+
+    def has_delete_permission(
+        self, request: HttpRequest, obj: Any | None = None
+    ) -> bool:
+        return True
+
     @staticmethod
-    @admin.display(description=_("Nombre de paiements pass région"))
+    @admin.display(description=_("Pass Région acceptés / attendus"))
     def pass_region_count(obj: PaymentCase) -> str:
-        return f"{obj.passregionpayment_set.count()} / {obj.total_payments_required}"
+        confirmed_payments_count = obj.passregionpayment_set.filter(
+            payment_status=PassRegionPayment.PassRegionPaymentChoice.PAYMENT_APPROVED
+        ).count()
+        return f"{confirmed_payments_count} / {obj.total_payments_required}"
 
     def save_model(
         self, request: HttpRequest, obj: Any, form: Any, change: Any
@@ -133,6 +176,15 @@ class PaymentCaseAdmin(_PaymentCaseAdmin):
             )
 
             transaction.on_commit(lambda: self.send_magic_link(obj, request))
+
+        else:
+            obj.user.first_name = form.cleaned_data["first_name"]
+            obj.user.last_name = form.cleaned_data["last_name"]
+            obj.user.email = form.cleaned_data["email"]
+            obj.user.save()
+
+            if "email" in cast(PaymentCaseAdminForm, form).changed_data:
+                transaction.on_commit(lambda: self.send_magic_link(obj, request))
 
         super().save_model(request, obj, form, change)
 
@@ -162,20 +214,25 @@ class CardPaymentAdmin(_CardPaymentAdmin):
     ]
     list_filter = ["payment_case__session_number", "payment_status"]
 
-    def has_add_permission(self, request: HttpRequest) -> bool:
-        return request.user.is_superuser
-
     def get_queryset(self, request: HttpRequest) -> QuerySet[CardPayment, CardPayment]:
         user_orgs = get_user_orgs(cast(User, request.user))
         return CardPayment.objects.filter(payment_case__organization__in=user_orgs)
 
+    def has_module_permission(self, request: HttpRequest) -> bool:
+        return True
+
+    def has_view_permission(self, request: HttpRequest, obj: Any | None = None) -> bool:
+        return True
+
 
 @admin.register(APICredentialRecord)
 class APICredentialRecordAdmin(_APICredentialRecordAdmin):
-    def has_module_permission(self, request: HttpRequest) -> bool:
-        return request.user.is_superuser
-
     def has_add_permission(self, request: HttpRequest) -> bool:
+        return False
+
+    def has_change_permission(
+        self, request: HttpRequest, obj: Any | None = ...
+    ) -> bool:
         return False
 
 
@@ -185,11 +242,17 @@ class OrganizationAdmin(_OrganizationAdmin):
     readonly_fields = ["webhook_url"]
 
     def get_queryset(self, request: HttpRequest) -> QuerySet[Organization]:
-        return (
-            super()
-            .get_queryset(request)
-            .filter(pk__in=get_user_orgs(cast(User, request.user)))
+        return Organization.objects.filter(
+            pk__in=get_user_orgs(cast(User, request.user))
         )
+
+    def has_module_permission(self, request: HttpRequest) -> bool:
+        return True
+
+    def has_change_permission(
+        self, request: HttpRequest, obj: Any | None = ...
+    ) -> bool:
+        return True
 
     @admin.display(description=_("URL du webhook"))
     def webhook_url(self, obj: Organization):
@@ -209,9 +272,6 @@ class OrganizationAdmin(_OrganizationAdmin):
         else:
             super().save_model(request, obj, form, change)
 
-    def has_add_permission(self, request: HttpRequest) -> bool:
-        return request.user.is_superuser
-
 
 class StaffUserInline(_StaffUserInline):
     model = StaffUser
@@ -221,7 +281,7 @@ admin.site.unregister(User)
 
 
 @admin.register(User)
-class UserAdmin(DjangoUserAdmin):
+class UserAdmin(DjangoUserAdmin, unfold.admin.ModelAdmin):
     inlines = [StaffUserInline]
 
 
